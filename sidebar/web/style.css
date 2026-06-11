@@ -231,3 +231,74 @@ section { padding: 10px 12px; }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ---------- proposals (M4-7) ---------- */
+.count-badge {
+  font-family: var(--font-pixel); font-size: 8px;
+  background: var(--magenta); color: #fff;
+  padding: 2px 6px; border-radius: 8px;
+}
+.empty-note { font-family: var(--font-thai); font-size: 12px; color: var(--sub); padding: 6px 2px; }
+.proposal-card {
+  border: 1px solid var(--border); border-left: 3px solid var(--gold);
+  background: var(--panel); padding: 8px 10px; margin-bottom: 8px;
+}
+.p-title { font-family: var(--font-thai); font-size: 13px; font-weight: 600; color: var(--text); }
+.p-detail { font-family: var(--font-thai); font-size: 12px; color: var(--sub); margin-top: 4px; }
+.p-by { font-family: var(--font-mono); font-size: 10px; color: var(--sub); margin-top: 4px; }
+.p-actions { display: flex; gap: 6px; margin-top: 8px; }
+.p-actions .ok { border-color: var(--green); color: var(--green); }
+.p-actions .no { color: var(--sub); }
+
+/* ---------- settings (M4-6) ---------- */
+#settings-body { padding: 4px 2px 8px; }
+#settings-body h3 {
+  font-family: var(--font-pixel); font-size: 7px; color: var(--sub);
+  letter-spacing: 1px; margin: 12px 0 6px;
+  border-bottom: 1px solid var(--border); padding-bottom: 4px;
+}
+.set-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-family: var(--font-thai); font-size: 12px; color: var(--sub);
+  margin-bottom: 6px;
+}
+.set-row select, .set-row input[type="password"], .set-row input[type="number"] {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 11px; padding: 4px 6px;
+}
+.key-row input[type="password"] { flex: 1; min-width: 80px; }
+.set-row .num { width: 56px; }
+.set-row label.inline { display: flex; align-items: center; gap: 4px; }
+.key-chip {
+  font-family: var(--font-mono); font-size: 10px;
+  border: 1px solid var(--border); color: var(--sub); padding: 2px 6px;
+}
+.key-chip.on { border-color: var(--green); color: var(--green); }
+
+/* ---------- agent gear + model modal (M4-6) ---------- */
+.agent-card .gear { font-size: 12px; padding: 2px 4px; }
+#model-backdrop {
+  position: fixed; inset: 0; background: rgba(5, 3, 12, 0.8);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+#model-backdrop.hidden { display: none; }
+#model-modal {
+  background: var(--panel); border: 1px solid var(--magenta);
+  box-shadow: 0 0 24px rgba(224, 64, 251, 0.25);
+  padding: 16px; width: 86%; max-width: 280px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#model-modal h2 { font-family: var(--font-pixel); font-size: 9px; color: var(--magenta); }
+#model-modal label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-family: var(--font-thai); font-size: 12px; color: var(--sub);
+}
+#model-modal select, #model-modal input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; padding: 6px;
+}
+.warn-note {
+  font-family: var(--font-thai); font-size: 11px; color: var(--gold);
+  border: 1px solid var(--gold); padding: 6px 8px; background: rgba(255, 224, 64, 0.06);
+}
+.warn-note.hidden { display: none; }

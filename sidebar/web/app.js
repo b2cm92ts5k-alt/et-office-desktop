@@ -44,11 +44,13 @@ function renderAgents() {
     const card = document.createElement("div");
     card.className = "agent-card";
     card.style.setProperty("--ac", a.color);
+    const cloud = a.llm.provider !== "ollama" ? "☁ " : "";
     card.innerHTML =
       `<span class="avatar">${esc(a.avatar)}</span>` +
       `<span class="info"><div class="name">${esc(a.name)}</div>` +
-      `<div class="role">${esc(a.role)} · ${esc(a.llm.model)}</div></span>` +
-      `<span class="pill" id="pill-${a.id}"></span>`;
+      `<div class="role">${esc(a.role)} · ${cloud}${esc(a.llm.model)}</div></span>` +
+      `<span class="pill" id="pill-${a.id}"></span>` +
+      `<button class="ghost gear" title="เลือก model" onclick="openModelPicker('${a.id}')">⚙</button>`;
     el.appendChild(card);
     setPill(a.id, a.status);
   }
@@ -134,6 +136,184 @@ function qaSubmit(text) {
   submitTask();
 }
 
+/* ---------- proposals (M4-7) ---------- */
+
+async function loadProposals() {
+  try {
+    const res = await fetch(BASE + "/proposals?status=pending");
+    renderProposals(await res.json());
+  } catch { /* daemon down — WS reconnect จะเรียกซ้ำเอง */ }
+}
+
+function renderProposals(list) {
+  const el = document.getElementById("proposal-list");
+  const badge = document.getElementById("prop-count");
+  el.innerHTML = "";
+  badge.classList.toggle("hidden", list.length === 0);
+  badge.textContent = list.length;
+  if (list.length === 0) {
+    el.innerHTML = '<div class="empty-note">ยังไม่มีข้อเสนอจากทีม</div>';
+    return;
+  }
+  for (const p of list) {
+    const names = (p.proposed_by || []).map(nameOf).join(" + ");
+    const card = document.createElement("div");
+    card.className = "proposal-card";
+    card.innerHTML =
+      `<div class="p-title">💡 ${esc(p.title)}</div>` +
+      (p.detail ? `<div class="p-detail">${esc(trim(p.detail, 280))}</div>` : "") +
+      (names ? `<div class="p-by">โดย ${esc(names)}</div>` : "") +
+      `<div class="p-actions">` +
+      `<button class="neon-btn ok" onclick="respondProposal('${p.id}','approve')">✓ APPROVE</button>` +
+      `<button class="ghost no" onclick="respondProposal('${p.id}','reject')">✗ REJECT</button>` +
+      `</div>`;
+    el.appendChild(card);
+  }
+}
+
+async function respondProposal(id, action) {
+  const res = await fetch(BASE + "/proposals/respond", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ proposal_id: id, action }),
+  });
+  if (res.ok) {
+    feedLine(action === "approve" ? "done" : "ln",
+      action === "approve" ? "✓ อนุมัติข้อเสนอ — ทีมเริ่มงานแล้ว" : "ปัดตกข้อเสนอแล้ว");
+  } else {
+    feedLine("error", `ตอบข้อเสนอไม่สำเร็จ (${res.status})`);
+  }
+  loadProposals();
+}
+
+/* ---------- settings (M4-6) ---------- */
+
+let settingsOpen = false;
+
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById("settings-body").classList.toggle("hidden", !settingsOpen);
+  document.getElementById("settings-arrow").textContent = settingsOpen ? "▾" : "▸";
+  if (settingsOpen) loadSettings();
+}
+
+let keyStatus = {};
+
+async function loadSettings() {
+  try {
+    const vram = await (await fetch(BASE + "/system/vram")).json();
+    document.getElementById("vram-info").textContent =
+      `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended.qwen}`;
+    keyStatus = await (await fetch(BASE + "/settings/apikey")).json();
+    renderKeyStatus();
+    const soc = await (await fetch(BASE + "/settings/social")).json();
+    document.getElementById("soc-enabled").checked = !!soc.social_enabled;
+    document.getElementById("soc-chance").value = soc.social_chance;
+    document.getElementById("soc-cooldown").value = Math.round(soc.proposal_cooldown_sec / 60);
+  } catch {
+    feedLine("error", "โหลด settings ไม่ได้");
+  }
+}
+
+function renderKeyStatus() {
+  document.getElementById("key-status").innerHTML =
+    ["claude", "gemini", "openai"].map(p => {
+      const on = keyStatus[p];
+      return `<span class="key-chip ${on ? "on" : ""}">${p}: ${on ? "✓ set" : "—"}</span>`;
+    }).join(" ");
+}
+
+async function saveKey() {
+  const provider = document.getElementById("key-provider").value;
+  const key = document.getElementById("key-value").value.trim();
+  if (!key) return;
+  const res = await fetch(BASE + "/settings/apikey", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, key }),
+  });
+  if (res.ok) {
+    document.getElementById("key-value").value = "";
+    keyStatus[provider] = true;
+    renderKeyStatus();
+    feedLine("done", `บันทึก ${provider} key แล้ว (เก็บใน .env เครื่องนี้เท่านั้น)`);
+  } else {
+    feedLine("error", `บันทึก key ไม่สำเร็จ (${res.status})`);
+  }
+}
+
+async function saveSocial() {
+  const payload = {
+    social_enabled: document.getElementById("soc-enabled").checked,
+    social_chance: parseFloat(document.getElementById("soc-chance").value) || 0,
+    proposal_cooldown_sec: (parseFloat(document.getElementById("soc-cooldown").value) || 0) * 60,
+  };
+  const res = await fetch(BASE + "/settings/social", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  feedLine(res.ok ? "done" : "error",
+    res.ok ? "บันทึกค่า social loop แล้ว" : "บันทึกไม่สำเร็จ");
+}
+
+/* ---------- model picker (M4-6) ---------- */
+
+const DEFAULT_MODELS = {
+  ollama: "qwen3:8b", claude: "claude-sonnet-4-6",
+  gemini: "gemini-2.0-flash", openai: "gpt-4o",
+};
+let pickerAgentId = null;
+
+function openModelPicker(agentId) {
+  const a = agents[agentId];
+  if (!a) return;
+  pickerAgentId = agentId;
+  document.getElementById("m-agent-name").textContent = a.name;
+  document.getElementById("m-provider").value = a.llm.provider;
+  document.getElementById("m-model").value = a.llm.model;
+  onProviderChange();
+  document.getElementById("model-backdrop").classList.remove("hidden");
+}
+
+function closeModelPicker(ev) {
+  if (ev && ev.target.id !== "model-backdrop") return;
+  document.getElementById("model-backdrop").classList.add("hidden");
+  pickerAgentId = null;
+}
+
+function onProviderChange() {
+  const p = document.getElementById("m-provider").value;
+  document.getElementById("m-model").value = DEFAULT_MODELS[p] || "";
+  // เตือนถ้าเลือก cloud แต่ยังไม่ตั้ง key (status โหลดตอนเปิด settings — โหลดสดถ้ายังไม่มี)
+  const warn = document.getElementById("m-key-warn");
+  if (p === "ollama") { warn.classList.add("hidden"); return; }
+  const show = () => warn.classList.toggle("hidden", !!keyStatus[p]);
+  if (Object.keys(keyStatus).length === 0) {
+    fetch(BASE + "/settings/apikey").then(r => r.json()).then(s => { keyStatus = s; show(); });
+  } else { show(); }
+}
+
+async function saveModel() {
+  if (!pickerAgentId) return;
+  const llm = {
+    provider: document.getElementById("m-provider").value,
+    model: document.getElementById("m-model").value.trim(),
+  };
+  const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ llm }),
+  });
+  if (res.ok) {
+    feedLine("done", `เปลี่ยน model เป็น ${esc(llm.provider)}/${esc(llm.model)}`);
+    document.getElementById("model-backdrop").classList.add("hidden");
+    loadAgents();
+  } else {
+    feedLine("error", `เปลี่ยน model ไม่สำเร็จ (${res.status})`);
+  }
+}
+
 /* ---------- WebSocket (realtime) ---------- */
 
 let qaFired = false;
@@ -148,6 +328,7 @@ function runQaHooks() {
     setTimeout(toggleSidebar, 3000);
     setTimeout(toggleSidebar, 6000);
   }
+  if (q.get("qa_settings")) setTimeout(toggleSettings, 1500);
 }
 
 function connectWs() {
@@ -156,6 +337,7 @@ function connectWs() {
     setDaemonDot(true);
     feedLine("done", "เชื่อมต่อ daemon แล้ว");
     loadAgents().then(runQaHooks);
+    loadProposals();
   };
   ws.onclose = () => {
     setDaemonDot(false);
@@ -205,7 +387,18 @@ function handleEvent(ev) {
       break;
     case "proposal.created":
       feedLine("social", `💡 ข้อเสนอใหม่: <b>${esc(trim(d.title, 150))}</b>`);
+      loadProposals();
       break;
+    case "proposal.responded":
+      loadProposals();
+      break;
+    case "sidebar.toggle": {
+      // มาจาก system tray (M4-8) — sync CSS ของหน้าให้ตรงกับขนาดหน้าต่าง
+      const expanded = !!(d.expanded ?? true);
+      collapsed = !expanded;
+      document.body.classList.toggle("collapsed", collapsed);
+      break;
+    }
   }
 }
 

@@ -44,6 +44,48 @@
       <button type="submit" class="neon-btn">SEND</button>
     </form>
   </section>
+
+  <!-- Proposals (M4-7) -->
+  <section id="proposals-panel">
+    <div class="section-head">
+      <h2>PROPOSALS</h2>
+      <span id="prop-count" class="count-badge hidden"></span>
+    </div>
+    <div id="proposal-list"><div class="empty-note">ยังไม่มีข้อเสนอจากทีม</div></div>
+  </section>
+
+  <!-- Settings (M4-6) -->
+  <section id="settings-panel">
+    <div class="section-head">
+      <h2>SETTINGS</h2>
+      <button class="ghost" onclick="toggleSettings()" id="settings-arrow">▸</button>
+    </div>
+    <div id="settings-body" class="hidden">
+      <div class="set-row" id="vram-info">VRAM: …</div>
+
+      <h3>API KEYS — cloud (optional)</h3>
+      <div class="set-row key-row">
+        <select id="key-provider">
+          <option value="claude">Claude</option>
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+        </select>
+        <input id="key-value" type="password" placeholder="วาง API key…" autocomplete="off">
+        <button class="neon-btn" onclick="saveKey()">SAVE</button>
+      </div>
+      <div id="key-status" class="set-row"></div>
+
+      <h3>SOCIAL LOOP</h3>
+      <div class="set-row">
+        <label class="inline"><input type="checkbox" id="soc-enabled"> เปิด agent คุยกันเอง</label>
+      </div>
+      <div class="set-row">
+        <label class="inline">โอกาสคุย <input id="soc-chance" type="number" min="0" max="1" step="0.05" class="num"></label>
+        <label class="inline">cooldown ข้อเสนอ (นาที) <input id="soc-cooldown" type="number" min="0" step="5" class="num"></label>
+        <button class="neon-btn" onclick="saveSocial()">SAVE</button>
+      </div>
+    </div>
+  </section>
 </div>
 
 <!-- Hire modal (M4-4) -->
@@ -67,6 +109,27 @@
     <div class="modal-actions">
       <button class="ghost" onclick="closeHire()">ยกเลิก</button>
       <button class="neon-btn" onclick="hireAgent()">HIRE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Model picker modal (M4-6) — per-agent LOCAL/CLOUD -->
+<div id="model-backdrop" class="hidden" onclick="closeModelPicker(event)">
+  <div id="model-modal">
+    <h2>MODEL — <span id="m-agent-name"></span></h2>
+    <label>Provider
+      <select id="m-provider" onchange="onProviderChange()">
+        <option value="ollama">🤖 LOCAL — Ollama</option>
+        <option value="claude">☁ Claude</option>
+        <option value="gemini">☁ Gemini</option>
+        <option value="openai">☁ OpenAI</option>
+      </select>
+    </label>
+    <label>Model <input id="m-model" placeholder="qwen3:8b"></label>
+    <div id="m-key-warn" class="warn-note hidden">⚠ provider นี้ยังไม่ได้ตั้ง API key — ไปที่ SETTINGS ก่อน</div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModelPicker()">ยกเลิก</button>
+      <button class="neon-btn" onclick="saveModel()">SAVE</button>
     </div>
   </div>
 </div>
