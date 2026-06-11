@@ -187,7 +187,8 @@ def main() -> None:
         tray.start()
         threading.Thread(target=sb.listen_toggle, args=(tray,), daemon=True).start()
 
-    webview.start(after_start)
+    # private_mode=False — เก็บ localStorage ข้ามรอบ (ปิด-เปิดแล้ว state คืนได้, M4-11)
+    webview.start(after_start, private_mode=False)
 
 
 if __name__ == "__main__":

@@ -195,6 +195,7 @@ function toggleSettings() {
   document.getElementById("settings-body").classList.toggle("hidden", !settingsOpen);
   document.getElementById("settings-arrow").textContent = settingsOpen ? "▾" : "▸";
   if (settingsOpen) loadSettings();
+  saveUiState();
 }
 
 let keyStatus = {};
@@ -317,6 +318,7 @@ async function saveModel() {
 /* ---------- WebSocket (realtime) ---------- */
 
 let qaFired = false;
+let uiRestored = false;
 
 function runQaHooks() {
   // QA hooks จาก host.py --qa-task / --qa-toggle (ส่งมาทาง query param)
@@ -338,6 +340,7 @@ function connectWs() {
     feedLine("done", "เชื่อมต่อ daemon แล้ว");
     loadAgents().then(runQaHooks);
     loadProposals();
+    if (!uiRestored) { uiRestored = true; restoreUiState(); }
   };
   ws.onclose = () => {
     setDaemonDot(false);
@@ -389,29 +392,85 @@ function handleEvent(ev) {
       feedLine("social", `💡 ข้อเสนอใหม่: <b>${esc(trim(d.title, 150))}</b>`);
       loadProposals();
       break;
-    case "proposal.responded":
+    case "proposal.approved":   // ตอบจาก client อื่น (API/เครื่องอื่น) ก็ต้อง refresh
+    case "proposal.rejected":
       loadProposals();
+      break;
+    case "qa.ping":
+      postQaReport();  // QA gate M4-11 ขอ snapshot สถานะ DOM
       break;
     case "sidebar.toggle": {
       // มาจาก system tray (M4-8) — sync CSS ของหน้าให้ตรงกับขนาดหน้าต่าง
       const expanded = !!(d.expanded ?? true);
       collapsed = !expanded;
       document.body.classList.toggle("collapsed", collapsed);
+      saveUiState();
       break;
     }
   }
 }
 
-/* ---------- collapse (M4-3) ---------- */
+/* ---------- collapse (M4-3) + state persistence (M4-11) ---------- */
 
 function toggleSidebar() {
   collapsed = !collapsed;
   document.body.classList.toggle("collapsed", collapsed);
+  saveUiState();
   // แจ้ง host ผ่าน daemon ให้ resize หน้าต่าง (ไม่ใช้ js_api bridge — ดู host.py)
   fetch(BASE + "/event", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "sidebar.toggle", data: { expanded: !collapsed } }),
+  }).catch(() => {});
+}
+
+/* ปิด-เปิดแล้ว state คืนได้ (M4-11) — ต้องรัน pywebview แบบ private_mode=False */
+
+function saveUiState() {
+  try {
+    localStorage.setItem("et_sidebar_state",
+      JSON.stringify({ collapsed, settingsOpen }));
+  } catch { /* storage ใช้ไม่ได้ (private mode) — ข้าม */ }
+}
+
+function restoreUiState() {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem("et_sidebar_state")); } catch {}
+  if (!st) return;
+  if (st.settingsOpen) toggleSettings();
+  if (st.collapsed) {
+    collapsed = true;
+    document.body.classList.add("collapsed");
+    // sync ขนาดหน้าต่างกับ host (รอ WS listener ของ host พร้อมก่อนสักนิด)
+    setTimeout(() => fetch(BASE + "/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "sidebar.toggle", data: { expanded: false } }),
+    }).catch(() => {}), 1200);
+  }
+}
+
+/* ---------- QA self-report (M4-11) ---------- */
+
+function postQaReport() {
+  const pills = {};
+  for (const id of Object.keys(agents)) {
+    const el = document.getElementById("pill-" + id);
+    if (el) pills[id] = el.textContent.toLowerCase();
+  }
+  const snap = {
+    agents_rendered: document.querySelectorAll(".agent-card").length,
+    proposals_rendered: document.querySelectorAll(".proposal-card").length,
+    feed_lines: document.getElementById("feed").children.length,
+    collapsed,
+    settings_open: settingsOpen,
+    vram_text: document.getElementById("vram-info").textContent,
+    pills,
+  };
+  fetch(BASE + "/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "qa.sidebar", data: snap }),
   }).catch(() => {});
 }
 
