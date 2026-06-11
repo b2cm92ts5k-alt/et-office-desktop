@@ -6,6 +6,7 @@ config_version=5
 
 config/name="ET Office Desktop"
 config/description="Cyberpunk synthwave isometric AI agent office — live desktop wallpaper"
+run/main_scene="res://scenes/office_floor.tscn"
 config/features=PackedStringArray("4.6")
 
 [display]
@@ -17,4 +18,5 @@ window/size/always_on_top=false
 
 [rendering]
 
-renderer/rendering_method="forward_plus"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
