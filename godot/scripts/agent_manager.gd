@@ -19,9 +19,9 @@ const DESK_SPOTS: Array[Vector2i] = [
 	Vector2i(7, 3), Vector2i(9, 3), Vector2i(11, 3),
 ]
 const ZONE_SPOTS := {
-	"cafe":    [Vector2i(8, 7), Vector2i(10, 8), Vector2i(9, 10)],
+	"cafe":    [Vector2i(8, 7), Vector2i(10, 8), Vector2i(9, 10), Vector2i(11, 6)],
 	"meeting": [Vector2i(2, 7), Vector2i(4, 8), Vector2i(2, 9), Vector2i(4, 10)],
-	"dorm":    [Vector2i(14, 7), Vector2i(16, 8), Vector2i(14, 9)],
+	"dorm":    [Vector2i(14, 7), Vector2i(16, 8), Vector2i(14, 9), Vector2i(16, 10)],
 }
 
 # map ชื่อ role (จาก daemon registry) → sprite key (ชื่อไฟล์ char_<key>.png)
@@ -46,6 +46,11 @@ var _http: HTTPRequest
 
 func _ready() -> void:
 	_nav = OfficeNav.new(GRID_W, GRID_H)
+	# cell ที่มีผนังตั้งอยู่ (col 0 / row 0 — ตรงกับ office_builder) เดินทะลุไม่ได้ (M3-12)
+	for gy in GRID_H:
+		_nav.set_blocked(Vector2i(0, gy), true)
+	for gx in GRID_W:
+		_nav.set_blocked(Vector2i(gx, 0), true)
 	_http = HTTPRequest.new()
 	add_child(_http)
 	_http.request_completed.connect(_on_agents_fetched)
@@ -133,6 +138,8 @@ func _on_event(event: Dictionary) -> void:
 			var by: Array = data.get("proposed_by", [])
 			if not by.is_empty():
 				_say({"agent_id": by[0]}, "💡 เสนอไอเดีย: " + str(data.get("title", "")))
+		"qa.dump":
+			_dump_positions()  # QA gate M3-12 อ่าน snapshot นี้ไปตรวจ
 		"agent.deleted":
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):
@@ -140,6 +147,22 @@ func _on_event(event: Dictionary) -> void:
 				_auto_slept.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)
+
+
+func _dump_positions() -> void:
+	# snapshot ตำแหน่ง/สถานะทุก agent → user://qa_positions.json (ให้ qa_m3.py ตรวจ)
+	var snap := {"ts": Time.get_unix_time_from_system(), "agents": []}
+	for id: String in _agents:
+		var s: AgentSprite = _agents[id]
+		(snap["agents"] as Array).append({
+			"id": id, "name": s.agent_name,
+			"grid": [s.grid_pos().x, s.grid_pos().y],
+			"status": s.status, "walking": s.is_walking(),
+		})
+	var f := FileAccess.open("user://qa_positions.json", FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(snap))
+		f.close()
 
 
 func _say(data: Dictionary, text: String) -> void:
