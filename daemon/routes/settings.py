@@ -6,7 +6,8 @@ import os
 from fastapi import APIRouter
 
 from ..adapters.llm_adapter import ENV_KEY_MAP
-from ..models.schemas import ApiKeyRequest
+from ..models.schemas import ApiKeyRequest, SocialSettings
+from ..services.settings_store import settings_store
 
 router = APIRouter(tags=["settings"])
 ENV_PATH = Path(__file__).parent.parent / ".env"
@@ -33,3 +34,14 @@ def set_apikey(payload: ApiKeyRequest) -> dict:
 def apikey_status() -> dict:
     """บอกแค่ว่า provider ไหนตั้ง key แล้ว — ไม่เปิดเผยตัว key"""
     return {p: bool(os.environ.get(v)) for p, v in ENV_KEY_MAP.items()}
+
+
+@router.get("/settings/social")
+def get_social_settings() -> dict:
+    return settings_store.all()
+
+
+@router.put("/settings/social")
+def update_social_settings(payload: SocialSettings) -> dict:
+    """มีผลรอบ loop ถัดไปทันที ไม่ต้อง restart daemon"""
+    return settings_store.update(payload.model_dump(exclude_none=True))

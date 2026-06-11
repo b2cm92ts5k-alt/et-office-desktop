@@ -14,14 +14,17 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 load_dotenv(Path(__file__).parent / ".env")  # โหลดก่อน import modules ที่อ่าน env
 
 from .database import init_db                              # noqa: E402
-from .routes import agents, events, logs, roles, settings, system, tasks  # noqa: E402
+from .routes import agents, events, logs, proposals, roles, settings, system, tasks  # noqa: E402
+from .services.social_service import social_service        # noqa: E402
 from .services.ws_manager import ws_manager                # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    social_service.start()  # idle social loop (M3-9)
     yield
+    social_service.stop()
 
 
 app = FastAPI(
@@ -38,6 +41,7 @@ app.include_router(roles.router)
 app.include_router(settings.router)
 app.include_router(events.router)
 app.include_router(logs.router)
+app.include_router(proposals.router)
 
 
 @app.websocket("/ws")

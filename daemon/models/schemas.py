@@ -84,6 +84,26 @@ class Proposal(BaseModel):
     created_at: str = Field(default_factory=_now)
 
 
+class ProposalCreate(BaseModel):
+    title: str
+    detail: str = ""
+    proposed_by: list[str] = []
+
+
+class ProposalRespond(BaseModel):
+    proposal_id: str
+    action: Literal["approve", "reject"]
+    note: str = ""
+
+
+class SocialSettings(BaseModel):
+    """ปรับ social loop runtime — field ไหนไม่ส่ง = คงค่าเดิม"""
+    social_enabled: Optional[bool] = None
+    social_interval_sec: Optional[float] = Field(default=None, ge=5)
+    social_chance: Optional[float] = Field(default=None, ge=0, le=1)
+    proposal_cooldown_sec: Optional[float] = Field(default=None, ge=0)
+
+
 class LogEntry(BaseModel):
     id: int = 0
     ts: str = Field(default_factory=_now)

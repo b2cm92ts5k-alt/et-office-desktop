@@ -127,6 +127,12 @@ func _on_event(event: Dictionary) -> void:
 			_say(data, str(data.get("output", "")))
 		"task.failed":
 			_say(data, "ล้มเหลว: " + str(data.get("error", "")))
+		"social.chat":
+			_say(data, str(data.get("text", "")))
+		"proposal.created":
+			var by: Array = data.get("proposed_by", [])
+			if not by.is_empty():
+				_say({"agent_id": by[0]}, "💡 เสนอไอเดีย: " + str(data.get("title", "")))
 		"agent.deleted":
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):

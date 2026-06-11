@@ -1,0 +1,49 @@
+"""SettingsStore — ค่า config ปรับได้ runtime เก็บเป็น JSON file (M3-10)
+ตอนนี้มีเฉพาะกลุ่ม social/proposal — เพิ่ม key ใหม่ที่ DEFAULTS ที่เดียว
+"""
+from __future__ import annotations
+
+import json
+import threading
+from pathlib import Path
+
+SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
+
+DEFAULTS: dict = {
+    "social_enabled": True,
+    "social_interval_sec": 300,      # เช็คทุก 5 นาที (blueprint)
+    "social_chance": 0.3,            # 30% ต่อรอบ
+    "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
+}
+
+
+class SettingsStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._values: dict = dict(DEFAULTS)
+        if SETTINGS_PATH.exists():
+            try:
+                saved = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+                self._values.update({k: saved[k] for k in DEFAULTS if k in saved})
+            except (json.JSONDecodeError, OSError):
+                pass  # ไฟล์พัง → ใช้ default แล้วเขียนทับตอน update ครั้งถัดไป
+
+    def all(self) -> dict:
+        return dict(self._values)
+
+    def get(self, key: str):
+        return self._values.get(key, DEFAULTS.get(key))
+
+    def update(self, changes: dict) -> dict:
+        """รับเฉพาะ key ที่รู้จัก — กัน typo เขียนค่าขยะลงไฟล์"""
+        with self._lock:
+            self._values.update({k: v for k, v in changes.items()
+                                 if k in DEFAULTS and v is not None})
+            SETTINGS_PATH.parent.mkdir(exist_ok=True)
+            SETTINGS_PATH.write_text(
+                json.dumps(self._values, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return dict(self._values)
+
+
+settings_store = SettingsStore()
