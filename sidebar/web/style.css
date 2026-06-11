@@ -232,7 +232,13 @@ section { padding: 10px 12px; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* ---------- atmosphere picker (M4-10) ---------- */
+#atmo-row { gap: 4px; }
+.neon-btn.atmo { padding: 5px 7px; font-size: 9px; border-color: var(--border); color: var(--sub); }
+.neon-btn.atmo.on { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 6px #00e5ff44; }
+
 /* ---------- proposals (M4-7) ---------- */
+#proposal-list { max-height: 210px; overflow-y: auto; }  /* การ์ดเยอะ → scroll ในตัวเอง ไม่ดัน settings/terminal ตกจอ */
 .count-badge {
   font-family: var(--font-pixel); font-size: 8px;
   background: var(--magenta); color: #fff;

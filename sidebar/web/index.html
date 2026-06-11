@@ -63,6 +63,15 @@
     <div id="settings-body" class="hidden">
       <div class="set-row" id="vram-info">VRAM: …</div>
 
+      <h3>ATMOSPHERE — wallpaper mood (M4-10)</h3>
+      <div class="set-row" id="atmo-row">
+        <button class="neon-btn atmo on" data-mode="auto" onclick="setAtmosphere('auto')">AUTO</button>
+        <button class="neon-btn atmo" data-mode="dawn" onclick="setAtmosphere('dawn')">🌅</button>
+        <button class="neon-btn atmo" data-mode="day" onclick="setAtmosphere('day')">☀️</button>
+        <button class="neon-btn atmo" data-mode="golden" onclick="setAtmosphere('golden')">🌆</button>
+        <button class="neon-btn atmo" data-mode="night" onclick="setAtmosphere('night')">🌙</button>
+      </div>
+
       <h3>API KEYS — cloud (optional)</h3>
       <div class="set-row key-row">
         <select id="key-provider">

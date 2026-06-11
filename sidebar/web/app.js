@@ -258,6 +258,26 @@ async function saveSocial() {
     res.ok ? "บันทึกค่า social loop แล้ว" : "บันทึกไม่สำเร็จ");
 }
 
+/* ---------- atmosphere picker (M4-10) ---------- */
+
+const ATMO_LABELS = { auto: "ตามเวลาจริง", dawn: "🌅 DAWN", day: "☀️ CYBER DAY",
+                      golden: "🌆 GOLDEN NEON", night: "🌙 DEEP NIGHT" };
+
+async function setAtmosphere(mode) {
+  try {
+    await fetch(BASE + "/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "atmosphere.set", data: { mode } }),
+    });
+    for (const b of document.querySelectorAll("#atmo-row .atmo"))
+      b.classList.toggle("on", b.dataset.mode === mode);
+    feedLine("ln", `บรรยากาศ wallpaper → ${ATMO_LABELS[mode] || mode}`);
+  } catch {
+    feedLine("error", "เปลี่ยนบรรยากาศไม่ได้ — daemon เปิดอยู่ไหม?");
+  }
+}
+
 /* ---------- model picker (M4-6) ---------- */
 
 const DEFAULT_MODELS = {
