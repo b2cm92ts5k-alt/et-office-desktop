@@ -1,10 +1,17 @@
 extends Node
-## Agent choreography (M3-3) — รับ WS events → spawn / เดิน / เปลี่ยน status
+## Agent choreography (M3-3/M3-5) — รับ WS events → spawn / เดิน / เปลี่ยน status
 ## ดึง agent list จาก daemon (GET /agents) เมื่อ connect แล้ว spawn ลง World layer
+## M3-5: จอง spot ต่อ zone (กันยืนซ้อนกัน) + night shift — DEEP NIGHT (22:00–05:59
+## ตาม design doc §04) agent ที่ idle เดินไปนอน dorm เว้นหนึ่งตัวอยู่เวร
+## daemon เป็นเจ้าของ status จริงเสมอ — event ที่เข้ามา override พฤติกรรมกลางคืน
 
 const DAEMON_HTTP := "http://localhost:8797"
 const GRID_W := 18
 const GRID_H := 12
+
+const NIGHT_START_HOUR := 22  # DEEP NIGHT เริ่ม
+const NIGHT_END_HOUR := 6     # เช้า — ปลุกตัวที่หลับโดย night logic
+const NIGHT_CHECK_SEC := 60.0
 
 # จุดยืนประจำ zone (grid cells) — ตรงกับ ZONES ใน office_builder.gd
 const DESK_SPOTS: Array[Vector2i] = [
@@ -27,6 +34,9 @@ const ROLE_SPRITES := {
 
 var _agents: Dictionary = {}      # agent_id -> AgentSprite
 var _desk_of: Dictionary = {}     # agent_id -> Vector2i
+var _spot_of: Dictionary = {}     # agent_id -> Vector2i spot ที่จองใน zone
+var _spot_owner: Dictionary = {}  # Vector2i -> agent_id (กันยืนซ้อน)
+var _auto_slept: Dictionary = {}  # agent_id -> true เมื่อหลับโดย night logic (ไม่ใช่ daemon)
 var _nav: OfficeNav
 var _http: HTTPRequest
 
@@ -41,6 +51,12 @@ func _ready() -> void:
 	_http.request_completed.connect(_on_agents_fetched)
 	_events.connected.connect(_fetch_agents)
 	_events.event_received.connect(_on_event)
+
+	var night_timer := Timer.new()
+	night_timer.wait_time = NIGHT_CHECK_SEC
+	night_timer.timeout.connect(_check_night_shift)
+	add_child(night_timer)
+	night_timer.start()
 
 
 func _fetch_agents() -> void:
@@ -61,6 +77,7 @@ func _on_agents_fetched(_result: int, code: int, _headers: PackedStringArray,
 		_spawn_agent(cfg, i)
 	_debug("spawned=%d world_children=%d" % [_agents.size(), _world.get_child_count()])
 	print("[agents] spawned %d agents" % _agents.size())
+	_check_night_shift()  # boot ตอนกลางคืน → จัด night shift ทันทีไม่ต้องรอ timer
 
 
 func _debug(msg: String) -> void:
@@ -84,6 +101,8 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	sprite.place_at(desk)
 	_world.add_child(sprite)
 	_agents[id] = sprite
+	# status เริ่มต้นจาก registry — เดินไป zone ที่ถูกต้องเลยถ้าไม่ใช่ที่ desk
+	_apply_status(id, str(cfg.get("status", "idle")))
 
 
 func _sprite_key_for(role_text: String) -> String:
@@ -105,23 +124,29 @@ func _on_event(event: Dictionary) -> void:
 		"agent.deleted":
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):
+				_release_spot(id)
+				_auto_slept.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)
 
 
-func _apply_status(agent_id: String, status: String) -> void:
+func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -> void:
 	var sprite: AgentSprite = _agents.get(agent_id)
 	if sprite == null:
 		return
+	if from_daemon:
+		_auto_slept.erase(agent_id)  # daemon สั่งมาเอง → ไม่นับเป็นหลับอัตโนมัติแล้ว
+	sprite.set_status(status)
 	match status:
 		"working", "thinking", "idle":
+			_release_spot(agent_id)
 			_walk_to(sprite, _desk_of.get(agent_id, DESK_SPOTS[0]))
 		"break":
-			_walk_to(sprite, _random_spot("cafe"))
+			_walk_to(sprite, _claim_spot("cafe", agent_id))
 		"collab":
-			_walk_to(sprite, _random_spot("meeting"))
+			_walk_to(sprite, _claim_spot("meeting", agent_id))
 		"sleep":
-			_walk_to(sprite, _random_spot("dorm"))
+			_walk_to(sprite, _claim_spot("dorm", agent_id))
 
 
 func _walk_to(sprite: AgentSprite, dest: Vector2i) -> void:
@@ -130,6 +155,45 @@ func _walk_to(sprite: AgentSprite, dest: Vector2i) -> void:
 	sprite.walk_path(_nav.find_path(sprite.grid_pos(), dest))
 
 
-func _random_spot(zone: String) -> Vector2i:
+func _claim_spot(zone: String, agent_id: String) -> Vector2i:
+	# จอง spot ว่างใน zone — กัน agent ยืนทับกัน (M3-5 polish จาก M3-3)
+	if _spot_of.has(agent_id) and _spot_of[agent_id] in (ZONE_SPOTS[zone] as Array):
+		return _spot_of[agent_id]  # จองที่ใน zone นี้อยู่แล้ว ใช้ที่เดิม
+	_release_spot(agent_id)
 	var spots: Array = ZONE_SPOTS[zone]
-	return spots[randi() % spots.size()]
+	var free := spots.filter(func(s: Vector2i) -> bool: return not _spot_owner.has(s))
+	var spot: Vector2i = free.pick_random() if not free.is_empty() else spots.pick_random()
+	_spot_of[agent_id] = spot
+	_spot_owner[spot] = agent_id
+	return spot
+
+
+func _release_spot(agent_id: String) -> void:
+	if _spot_of.has(agent_id):
+		_spot_owner.erase(_spot_of[agent_id])
+		_spot_of.erase(agent_id)
+
+
+# --- Night shift (M3-5) — DEEP NIGHT ตาม design doc §04 -----------------
+
+func _is_night() -> bool:
+	var hour: int = Time.get_time_dict_from_system()["hour"]
+	return hour >= NIGHT_START_HOUR or hour < NIGHT_END_HOUR
+
+
+func _check_night_shift() -> void:
+	if _agents.is_empty():
+		return
+	var ids := _agents.keys()
+	ids.sort()
+	var night_shift: String = ids[0]  # ลำดับคงที่ → ตัวแรกอยู่เวรดึก ไม่หลับ
+	if _is_night():
+		for id: String in ids:
+			var sprite: AgentSprite = _agents[id]
+			if id != night_shift and sprite.status == "idle":
+				_auto_slept[id] = true
+				_apply_status(id, "sleep", false)
+	elif not _auto_slept.is_empty():
+		for id: String in _auto_slept.keys():
+			_apply_status(id, "idle", false)
+		_auto_slept.clear()
