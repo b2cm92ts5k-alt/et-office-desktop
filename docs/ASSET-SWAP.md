@@ -18,6 +18,12 @@
 วางทับชื่อเดิมที่ `godot/assets/sprites/furniture/`:
 `tile_floor_a.png` `tile_floor_b.png` (64×32) · `wall_n.png` `wall_w.png` (64×96)
 
+## เปลี่ยน speech bubble (hologram)
+
+วางทับชื่อเดิมที่ `godot/assets/sprites/fx/`: `bubble_9patch.png` (24×24, 9-patch margin 8px ทุกด้าน)
+ถ้าเปลี่ยนขนาด/margin แก้ const หัวไฟล์ [hud.gd](../godot/scripts/hud.gd) (`BUBBLE_MARGIN`, `BUBBLE_WIDTH`)
+Regenerate placeholder: `.venv\Scripts\python.exe art-src\gen_placeholder_ui.py`
+
 ## ถ้าจะเปลี่ยน "เลย์เอาต์" spritesheet (ไม่ใช่แค่รูป)
 
 ค่าคงที่ทั้งหมดอยู่หัวไฟล์ [agent_sprite.gd](../godot/scripts/agent_sprite.gd) ที่เดียว:

@@ -23,7 +23,7 @@ var aura_color: Color = Color("#00e5ff")
 var status: String = "idle"
 
 var _sprite: Sprite2D
-var _name_label: Label
+var _hud: AgentHud
 var _aura: NeonAura
 var _zzz: Label
 var _zzz_t: float = 0.0
@@ -55,18 +55,15 @@ func setup(id: String, display_name: String, sprite_key: String, color: Color) -
 	_sprite.offset = Vector2(0, -float(_sprite.texture.get_height()) / FRAME_ROWS / 2.0)
 	add_child(_sprite)
 
-	_name_label = Label.new()
-	_name_label.text = display_name
-	_name_label.add_theme_font_size_override("font_size", 8)
-	_name_label.add_theme_color_override("font_color", color)
-	_name_label.position = Vector2(-20, -58)
-	add_child(_name_label)
+	_hud = AgentHud.new()
+	add_child(_hud)
+	_hud.setup(display_name, color)
 
 	_zzz = Label.new()
 	_zzz.text = "Zzz"
 	_zzz.add_theme_font_size_override("font_size", 8)
 	_zzz.add_theme_color_override("font_color", Color("#4080ff"))
-	_zzz.position = Vector2(8, -56)
+	_zzz.position = Vector2(16, -44)  # ข้างหัว — ไม่ทับ nameplate/pill
 	_zzz.visible = false
 	add_child(_zzz)
 
@@ -77,8 +74,13 @@ func setup(id: String, display_name: String, sprite_key: String, color: Color) -
 func set_status(new_status: String) -> void:
 	status = new_status
 	_aura.set_status(new_status)
+	_hud.set_status(new_status)
 	if status != "sleep":
 		_set_sleep_visual(false)
+
+
+func say(text: String) -> void:
+	_hud.say(text)
 
 
 func _set_sleep_visual(on: bool) -> void:
@@ -113,7 +115,7 @@ func is_walking() -> bool:
 func _process(delta: float) -> void:
 	if _sleep_visual:
 		_zzz_t += delta
-		_zzz.position.y = -56.0 + sin(_zzz_t * 2.0) * 2.0  # Zzz ลอยขึ้นลงเบา ๆ
+		_zzz.position.y = -44.0 + sin(_zzz_t * 2.0) * 2.0  # Zzz ลอยขึ้นลงเบา ๆ
 
 	if _path.is_empty():
 		if _walk_frame != 0.0:  # หยุดเดิน → เฟรมยืน

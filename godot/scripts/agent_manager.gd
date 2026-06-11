@@ -121,6 +121,12 @@ func _on_event(event: Dictionary) -> void:
 			_apply_status(str(data.get("agent_id", "")), str(data.get("status", "")))
 		"agent.created":
 			_spawn_agent(data, _agents.size())
+		"task.routing":
+			_say(data, "รับงาน: " + str(data.get("message", "")))
+		"task.completed":
+			_say(data, str(data.get("output", "")))
+		"task.failed":
+			_say(data, "ล้มเหลว: " + str(data.get("error", "")))
 		"agent.deleted":
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):
@@ -128,6 +134,12 @@ func _on_event(event: Dictionary) -> void:
 				_auto_slept.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)
+
+
+func _say(data: Dictionary, text: String) -> void:
+	var sprite: AgentSprite = _agents.get(str(data.get("agent_id", "")))
+	if sprite != null:
+		sprite.say(text)
 
 
 func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -> void:
