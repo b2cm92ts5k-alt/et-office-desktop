@@ -419,6 +419,13 @@ function handleEvent(ev) {
     case "qa.ping":
       postQaReport();  // QA gate M4-11 ขอ snapshot สถานะ DOM
       break;
+    case "wallpaper.conflict": {
+      const apps = (d.apps || []).join(", ");
+      feedLine(d.paused ? "ln" : "error", d.paused
+        ? `⏸ pause ${esc(apps)} ให้ชั่วคราวแล้ว (คืนให้ตอนปิด ET Office)`
+        : `⚠ พบ ${esc(apps)} กำลังวาดทับ wallpaper — ปิดเองก่อนใช้ ET Office`);
+      break;
+    }
     case "sidebar.toggle": {
       // มาจาก system tray (M4-8) — sync CSS ของหน้าให้ตรงกับขนาดหน้าต่าง
       const expanded = !!(d.expanded ?? true);

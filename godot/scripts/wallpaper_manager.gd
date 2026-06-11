@@ -8,6 +8,7 @@ var paused_by_fullscreen: bool = false
 var _hwnd: int = 0
 var _flag_path: String = ""
 var _poll_timer: Timer
+var _guard := ConflictGuard.new()  # M2-14
 
 
 func _ready() -> void:
@@ -17,8 +18,21 @@ func _ready() -> void:
 	args.append_array(OS.get_cmdline_args())
 	args.append_array(OS.get_cmdline_user_args())
 	_debug("ready args=%s user_args=%s" % [str(OS.get_cmdline_args()), str(OS.get_cmdline_user_args())])
-	if "--wallpaper" in args:
+	if "--qa-conflict" in args:
+		_qa_conflict_cycle()
+	elif "--wallpaper" in args:
 		_embed_as_wallpaper()
+
+
+func _qa_conflict_cycle() -> void:
+	# QA M2-14: ตรวจ → pause → รอ 3 วิ → resume (โหมด window ไม่ attach)
+	var info := _guard.check_and_pause()
+	_debug("qa-conflict found=%s paused=%s" % [str(info["found"]), str(info["paused"])])
+	_notify_conflict(info)
+	if info["paused"]:
+		await get_tree().create_timer(3.0).timeout
+		_guard.resume()
+		_debug("qa-conflict resumed")
 
 
 func _debug(msg: String) -> void:
@@ -32,6 +46,11 @@ func _debug(msg: String) -> void:
 
 func _embed_as_wallpaper() -> void:
 	_debug("embed start")
+	# M2-14: pause wallpaper app ที่จะวาดทับ (Wallpaper Engine) ก่อน SetParent
+	var conflict := _guard.check_and_pause()
+	_debug("conflict found=%s paused=%s" % [str(conflict["found"]), str(conflict["paused"])])
+	_notify_conflict(conflict)
+
 	_hwnd = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE, 0)
 	_debug("hwnd=%d" % _hwnd)
 	var script_path := _wallpaper_script_path()
@@ -106,12 +125,27 @@ func _wallpaper_script_path() -> String:
 	return ""
 
 
+func _notify_conflict(info: Dictionary) -> void:
+	# แจ้ง user ผ่าน daemon → sidebar feed + tray toast (เงียบ ๆ ถ้า daemon ยังไม่ขึ้น)
+	if (info["found"] as Array).is_empty():
+		return
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(_r, _c, _h, _b): req.queue_free())
+	req.request("http://localhost:8797/event",
+		["Content-Type: application/json"], HTTPClient.METHOD_POST,
+		JSON.stringify({"type": "wallpaper.conflict", "data": {
+			"apps": info["found"], "paused": info["paused"],
+		}}))
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and wallpaper_mode:
 		_detach()
 
 
 func _detach() -> void:
+	_guard.resume()  # M2-14: คืน Wallpaper Engine ให้ user
 	var script_path := _wallpaper_script_path()
 	if script_path.is_empty() or _hwnd == 0:
 		return

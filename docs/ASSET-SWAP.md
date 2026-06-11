@@ -18,6 +18,12 @@
 วางทับชื่อเดิมที่ `godot/assets/sprites/furniture/`:
 `tile_floor_a.png` `tile_floor_b.png` (64×32) · `wall_n.png` `wall_w.png` (64×96)
 
+## เปลี่ยนป้าย ET OFFICE (neon sign)
+
+วางทับชื่อเดิมที่ `godot/assets/sprites/furniture/`: `sign_etoffice.png` (160×48)
+ตำแหน่ง/จังหวะ flicker แก้ const หัวไฟล์ [neon_signs.gd](../godot/scripts/neon_signs.gd)
+Regenerate placeholder: `.venv\Scripts\python.exe art-src\gen_placeholder_sign.py`
+
 ## เปลี่ยน speech bubble (hologram)
 
 วางทับชื่อเดิมที่ `godot/assets/sprites/fx/`: `bubble_9patch.png` (24×24, 9-patch margin 8px ทุกด้าน)

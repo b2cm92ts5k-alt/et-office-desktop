@@ -31,6 +31,7 @@ func _ready() -> void:
 	_build_floor()
 	_build_walls()
 	_build_zone_labels()
+	add_child(NeonSign.new())  # ป้าย ET OFFICE บนผนัง (M2-12) — child ท้ายสุด วาดทับผนัง
 
 
 func _build_floor() -> void:

@@ -79,6 +79,13 @@ class SidebarWindow:
                         elif mtype == "proposal.created":
                             tray.notify("💡 ข้อเสนอใหม่จากทีม",
                                         _trim(data.get("title", ""), 120))
+                        elif mtype == "wallpaper.conflict":
+                            apps = ", ".join(data.get("apps", []))
+                            tray.notify(
+                                "⏸ pause wallpaper app ให้แล้ว" if data.get("paused")
+                                else "⚠ wallpaper app ชนกัน",
+                                f"{apps} — ET Office จัดการให้แล้ว" if data.get("paused")
+                                else f"กรุณาปิด {apps} ก่อนใช้ ET Office")
             except Exception:
                 import time
                 time.sleep(3)  # daemon หาย → รอแล้วต่อใหม่
