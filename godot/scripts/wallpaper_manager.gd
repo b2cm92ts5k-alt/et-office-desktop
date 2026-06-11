@@ -4,7 +4,10 @@ extends Node
 ## spike M2-1 พิสูจน์แล้วว่า script ทำงานบน Win10/11
 
 var wallpaper_mode: bool = false
+var paused_by_fullscreen: bool = false
 var _hwnd: int = 0
+var _flag_path: String = ""
+var _poll_timer: Timer
 
 
 func _ready() -> void:
@@ -48,8 +51,45 @@ func _embed_as_wallpaper() -> void:
 	if wallpaper_mode:
 		Engine.max_fps = 30  # M2-3: ลด GPU load ใน wallpaper mode
 		print("[wallpaper] attach spawned pid=%d hwnd=%d" % [pid, _hwnd])
+		_start_fullscreen_watch()
 	else:
 		push_error("[wallpaper] failed to spawn attach process")
+
+
+# --- M2-4: pause เมื่อมี fullscreen app ทับ ---
+
+func _start_fullscreen_watch() -> void:
+	_flag_path = ProjectSettings.globalize_path("user://fullscreen.flag")
+	var watch_script := _wallpaper_script_path().get_base_dir().path_join("fullscreen-watch.ps1")
+	OS.create_process("powershell.exe", [
+		"-NoProfile", "-ExecutionPolicy", "Bypass",
+		"-File", watch_script, "-OutFile", _flag_path,
+		"-ParentPid", str(OS.get_process_id()),
+	])
+	_poll_timer = Timer.new()
+	_poll_timer.wait_time = 1.0
+	# ต้อง ALWAYS — ไม่งั้นตอน tree paused ตัว timer หยุดด้วยแล้วปลุกตัวเองกลับไม่ได้
+	_poll_timer.process_mode = Node.PROCESS_MODE_ALWAYS
+	_poll_timer.timeout.connect(_check_fullscreen_flag)
+	add_child(_poll_timer)
+	_poll_timer.start()
+
+
+func _check_fullscreen_flag() -> void:
+	if not FileAccess.file_exists(_flag_path):
+		return
+	var covered: bool = FileAccess.get_file_as_string(_flag_path).strip_edges() == "1"
+	if covered == paused_by_fullscreen:
+		return
+	paused_by_fullscreen = covered
+	if covered:
+		Engine.max_fps = 2          # GPU เกือบ 0 ระหว่างถูกทับ
+		get_tree().paused = true
+		_debug("paused (fullscreen app detected)")
+	else:
+		Engine.max_fps = 30
+		get_tree().paused = false
+		_debug("resumed")
 
 
 func _wallpaper_script_path() -> String:
