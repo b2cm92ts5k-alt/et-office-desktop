@@ -27,9 +27,15 @@ class WSManager:
         await ws.accept()
         async with self._lock:
             self._clients.add(ws)
-        # replay journal ล่าสุดให้ client ใหม่
-        for event in self._read_journal_tail(REPLAY_LIMIT):
-            await ws.send_text(json.dumps({"replay": True, **event}, ensure_ascii=False))
+        # replay journal ล่าสุดให้ client ใหม่ (timeout กัน client ค้างระหว่าง replay)
+        try:
+            for event in self._read_journal_tail(REPLAY_LIMIT):
+                await asyncio.wait_for(
+                    ws.send_text(json.dumps({"replay": True, **event}, ensure_ascii=False)),
+                    timeout=2.0,
+                )
+        except Exception:
+            await self.disconnect(ws)
 
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
@@ -39,15 +45,20 @@ class WSManager:
         event.setdefault("ts", datetime.now(timezone.utc).isoformat())
         self._append_journal(event)
         text = json.dumps(event, ensure_ascii=False)
+        # snapshot ก่อนส่ง — ห้ามถือ lock ระหว่าง send และห้าม send แบบไม่มี timeout:
+        # client ที่ถูก force-kill จะทำให้ send ค้างตลอดกาล → daemon ทั้งตัว deadlock
         async with self._lock:
-            dead: list[WebSocket] = []
-            for ws in self._clients:
-                try:
-                    await ws.send_text(text)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                self._clients.discard(ws)
+            clients = list(self._clients)
+        dead: list[WebSocket] = []
+        for ws in clients:
+            try:
+                await asyncio.wait_for(ws.send_text(text), timeout=2.0)
+            except Exception:
+                dead.append(ws)
+        if dead:
+            async with self._lock:
+                for ws in dead:
+                    self._clients.discard(ws)
 
     def broadcast_threadsafe(self, loop: asyncio.AbstractEventLoop, event: dict[str, Any]) -> None:
         """เรียกจาก worker thread (เช่น CrewAI kickoff) — ส่งเข้า event loop หลัก"""
