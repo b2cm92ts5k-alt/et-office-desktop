@@ -34,6 +34,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# sidebar (pywebview) โหลดจาก file:// → origin "null" — ต้องเปิด CORS ไม่งั้น fetch โดนบล็อก
+# daemon ฟังแค่ localhost จึงเปิดกว้างได้โดยไม่เสีย privacy posture
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(system.router)
 app.include_router(agents.router)
 app.include_router(tasks.router)
@@ -42,6 +53,12 @@ app.include_router(settings.router)
 app.include_router(events.router)
 app.include_router(logs.router)
 app.include_router(proposals.router)
+
+# serve หน้า sidebar (same-origin — fetch/WS ไม่ติด CORS/file:// ของ webview)
+_SIDEBAR_WEB = Path(__file__).parent.parent / "sidebar" / "web"
+if _SIDEBAR_WEB.is_dir():
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+    app.mount("/sidebar", StaticFiles(directory=_SIDEBAR_WEB, html=True), name="sidebar")
 
 
 @app.websocket("/ws")

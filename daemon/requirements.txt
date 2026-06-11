@@ -14,3 +14,4 @@ websockets==16.0
 
 # หมายเหตุ: chroma-hnswlib (transitive dep ของ crewai) ไม่มี source build บน Windows
 # ถ้า pip พยายาม build จาก source ให้ติดตั้งด้วย: pip install --prefer-binary -r requirements.txt
+pywebview==6.2.1   # sidebar host (M4-1)

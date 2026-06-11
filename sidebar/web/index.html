@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ET Office Sidebar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- แถบหุบ (M4-3) — เห็นเฉพาะตอน collapsed -->
+<div id="strip" onclick="toggleSidebar()" title="เปิด ET Office">
+  <span id="strip-dot" class="dot off"></span>
+  <span class="strip-text">ET OFFICE</span>
+  <span class="strip-arrow">«</span>
+</div>
+
+<div id="panel">
+  <header>
+    <div class="brand">
+      <span id="daemon-dot" class="dot off" title="daemon status"></span>
+      <h1>ET OFFICE</h1>
+    </div>
+    <button class="ghost" onclick="toggleSidebar()" title="หุบ">»</button>
+  </header>
+
+  <!-- Agent list (M4-4) -->
+  <section id="agents-panel">
+    <div class="section-head">
+      <h2>AGENTS</h2>
+      <button class="neon-btn" onclick="openHire()">+ HIRE</button>
+    </div>
+    <div id="agent-list"></div>
+  </section>
+
+  <!-- Terminal (M4-5) -->
+  <section id="terminal-panel">
+    <div class="section-head"><h2>TERMINAL</h2></div>
+    <div id="feed"></div>
+    <form id="task-form" onsubmit="submitTask(); return false;">
+      <input id="task-input" type="text" placeholder="สั่งงานทีม… (Enter เพื่อส่ง)"
+             autocomplete="off">
+      <button type="submit" class="neon-btn">SEND</button>
+    </form>
+  </section>
+</div>
+
+<!-- Hire modal (M4-4) -->
+<div id="hire-backdrop" class="hidden" onclick="closeHire(event)">
+  <div id="hire-modal">
+    <h2>HIRE AGENT</h2>
+    <label>ชื่อ <input id="h-name" placeholder="ET Writer"></label>
+    <label>Role <input id="h-role" placeholder="Content Writer"></label>
+    <label>Keywords (คั่นด้วย ,) <input id="h-keywords" placeholder="เขียน, บทความ, สคริปต์"></label>
+    <label>Avatar <input id="h-avatar" value="🤖" maxlength="4"></label>
+    <label>สี aura
+      <select id="h-color">
+        <option value="#e040fb">Magenta</option>
+        <option value="#00e5ff">Cyan</option>
+        <option value="#ff4da6">Pink</option>
+        <option value="#00ff9f">Green</option>
+        <option value="#ffe040">Gold</option>
+        <option value="#ff6030">Orange</option>
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeHire()">ยกเลิก</button>
+      <button class="neon-btn" onclick="hireAgent()">HIRE</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
