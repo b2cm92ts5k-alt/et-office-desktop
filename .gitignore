@@ -1,0 +1,37 @@
+# --- secrets / local config ---
+.env
+*.env.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# --- data (runtime) ---
+*.sqlite
+*.sqlite3
+*.db
+daemon/data/
+*.jsonl
+
+# --- Godot 4 ---
+godot/.godot/
+godot/export_presets.cfg
+*.translation
+
+# --- OS / editor ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# --- build artifacts ---
+*.exe
+*.spec
+pyinstaller-build/

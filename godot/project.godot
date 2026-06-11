@@ -1,0 +1,20 @@
+; Engine configuration file.
+; ET Office Desktop — wallpaper renderer (Godot 4.6)
+config_version=5
+
+[application]
+
+config/name="ET Office Desktop"
+config/description="Cyberpunk synthwave isometric AI agent office — live desktop wallpaper"
+config/features=PackedStringArray("4.6")
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/borderless=true
+window/size/always_on_top=false
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
