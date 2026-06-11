@@ -10,6 +10,7 @@ python-dotenv==1.2.2
 pyyaml==6.0.3
 python-multipart==0.0.32
 pystray==0.19.5
+websockets==16.0
 
 # หมายเหตุ: chroma-hnswlib (transitive dep ของ crewai) ไม่มี source build บน Windows
 # ถ้า pip พยายาม build จาก source ให้ติดตั้งด้วย: pip install --prefer-binary -r requirements.txt
