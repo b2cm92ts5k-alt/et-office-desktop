@@ -1,0 +1,79 @@
+"""WebSocket hub — broadcast ทุก OEP event + event journal สำหรับ replay (M1-4)
+
+Daemon เป็น source of truth: Godot/Sidebar ตายแล้วกลับมา ก็ replay journal
+ต่อจากที่ค้างได้ — journal เก็บเป็น jsonl ที่ daemon/data/journal.jsonl
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from fastapi import WebSocket
+
+JOURNAL_PATH = Path(__file__).parent.parent / "data" / "journal.jsonl"
+REPLAY_LIMIT = 100  # ส่ง event ล่าสุดกี่ตัวให้ client ที่เพิ่ง connect
+
+
+class WSManager:
+    def __init__(self) -> None:
+        self._clients: set[WebSocket] = set()
+        self._lock = asyncio.Lock()
+        JOURNAL_PATH.parent.mkdir(exist_ok=True)
+
+    async def connect(self, ws: WebSocket) -> None:
+        await ws.accept()
+        async with self._lock:
+            self._clients.add(ws)
+        # replay journal ล่าสุดให้ client ใหม่
+        for event in self._read_journal_tail(REPLAY_LIMIT):
+            await ws.send_text(json.dumps({"replay": True, **event}, ensure_ascii=False))
+
+    async def disconnect(self, ws: WebSocket) -> None:
+        async with self._lock:
+            self._clients.discard(ws)
+
+    async def broadcast(self, event: dict[str, Any]) -> None:
+        event.setdefault("ts", datetime.now(timezone.utc).isoformat())
+        self._append_journal(event)
+        text = json.dumps(event, ensure_ascii=False)
+        async with self._lock:
+            dead: list[WebSocket] = []
+            for ws in self._clients:
+                try:
+                    await ws.send_text(text)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                self._clients.discard(ws)
+
+    def broadcast_threadsafe(self, loop: asyncio.AbstractEventLoop, event: dict[str, Any]) -> None:
+        """เรียกจาก worker thread (เช่น CrewAI kickoff) — ส่งเข้า event loop หลัก"""
+        asyncio.run_coroutine_threadsafe(self.broadcast(event), loop)
+
+    @property
+    def client_count(self) -> int:
+        return len(self._clients)
+
+    # --- journal ---
+
+    def _append_journal(self, event: dict[str, Any]) -> None:
+        with JOURNAL_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    def _read_journal_tail(self, limit: int) -> list[dict[str, Any]]:
+        if not JOURNAL_PATH.exists():
+            return []
+        lines = JOURNAL_PATH.read_text(encoding="utf-8").strip().splitlines()
+        events = []
+        for line in lines[-limit:]:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return events
+
+
+ws_manager = WSManager()
