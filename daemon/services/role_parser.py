@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -19,6 +20,14 @@ import yaml
 from ..models.schemas import RolePreset
 
 ROLES_DIR = Path(__file__).parent.parent / "roles"
+
+
+def _as_keyword_list(raw) -> list[str]:
+    """ทน format เพี้ยนจาก LLM/มือคน — list ปกติ, string คั่น comma, หรือคั่น space"""
+    if isinstance(raw, str):
+        sep = "," if ("," in raw or "，" in raw) else None
+        return [k.strip() for k in re.split(r"[,，]" if sep else r"\s+", raw) if k.strip()]
+    return [str(k).strip() for k in (raw or []) if str(k).strip()]
 
 
 def parse_role_md(text: str, filename: str = "") -> RolePreset:
@@ -38,7 +47,7 @@ def parse_role_md(text: str, filename: str = "") -> RolePreset:
         role=str(meta.get("role", name)),
         avatar=str(meta.get("avatar", "🤖")),
         color=str(meta.get("color", "#00e5ff")),
-        keywords=[str(k) for k in (meta.get("keywords") or [])],
+        keywords=_as_keyword_list(meta.get("keywords")),
         system_prompt=body,
     )
 

@@ -101,6 +101,24 @@
 <div id="hire-backdrop" class="hidden" onclick="closeHire(event)">
   <div id="hire-modal">
     <h2>HIRE AGENT</h2>
+
+    <!-- Role .md (M6-2/M6-3) — upload / เขียนเอง / AI ร่าง → เติมฟอร์มล่างอัตโนมัติ -->
+    <div class="role-box">
+      <div class="role-actions">
+        <button type="button" class="neon-btn sm" onclick="roleUpload()">📁 ไฟล์ .md</button>
+        <button type="button" class="neon-btn sm" onclick="roleEditor()">✎ เขียนเอง</button>
+        <button type="button" class="neon-btn sm" onclick="roleDraftRow()">✨ AI ร่าง</button>
+      </div>
+      <input id="h-md-file" type="file" accept=".md" class="hidden" onchange="roleFileChosen(this)">
+      <div id="h-draft-row" class="hidden">
+        <input id="h-draft-desc" placeholder="อธิบายหน้าที่สั้น ๆ แล้วกดร่าง">
+        <button type="button" class="neon-btn" id="h-draft-btn" onclick="draftRole()">ร่าง</button>
+      </div>
+      <textarea id="h-md-text" class="hidden" rows="7" spellcheck="false" oninput="roleTextTouched()"
+        placeholder="---&#10;name: ET Writer&#10;role: Content Writer&#10;keywords: [เขียน, บทความ]&#10;---&#10;system prompt ภาษาไทย…"></textarea>
+      <div id="h-role-status" class="role-status"></div>
+    </div>
+
     <label>ชื่อ <input id="h-name" placeholder="ET Writer"></label>
     <label>Role <input id="h-role" placeholder="Content Writer"></label>
     <label>Keywords (คั่นด้วย ,) <input id="h-keywords" placeholder="เขียน, บทความ, สคริปต์"></label>
@@ -118,6 +136,19 @@
     <div class="modal-actions">
       <button class="ghost" onclick="closeHire()">ยกเลิก</button>
       <button class="neon-btn" onclick="hireAgent()">HIRE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fire confirm modal (M6-1) -->
+<div id="fire-backdrop" class="hidden" onclick="closeFire(event)">
+  <div id="fire-modal">
+    <h2>FIRE AGENT</h2>
+    <p class="fire-text">ไล่ <b id="f-agent-name"></b> ออกจากทีม?<br>
+      ตัวละครจะหายจาก office — ถ้าอยากได้คืนต้องจ้างใหม่</p>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeFire()">ยกเลิก</button>
+      <button class="neon-btn danger" onclick="confirmFire()">FIRE</button>
     </div>
   </div>
 </div>

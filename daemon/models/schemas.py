@@ -132,3 +132,14 @@ class RolePreset(BaseModel):
     color: str = "#00e5ff"
     keywords: list[str] = []
     system_prompt: str = ""
+
+
+class RoleDraftRequest(BaseModel):
+    """M6-3 — ให้ AI ร่างไฟล์ role .md จากคำอธิบายสั้น ๆ"""
+    description: str
+
+
+class RoleSaveRequest(BaseModel):
+    """M6-2 — บันทึก role .md ลง daemon/roles/ ให้ใช้ซ้ำได้"""
+    filename: str = ""
+    text: str

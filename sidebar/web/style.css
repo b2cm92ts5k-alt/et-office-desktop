@@ -229,6 +229,26 @@ section { padding: 10px 12px; }
   margin-top: 12px;
 }
 
+/* --- hire role .md (M6-2/M6-3) --- */
+.role-box { border: 1px dashed var(--border); border-radius: 4px; padding: 8px; margin-bottom: 10px; }
+.role-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+.neon-btn.sm { padding: 4px 6px; font-size: 8px; }
+#h-draft-row { display: flex; gap: 6px; margin-bottom: 6px; }
+#h-draft-row input {
+  flex: 1; min-width: 0;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-family: var(--font-thai); font-size: 12px;
+  padding: 6px 8px; outline: none;
+}
+#h-md-text {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-mono); font-size: 11px;
+  padding: 6px; resize: vertical; outline: none;
+}
+.role-status { font-family: var(--font-thai); font-size: 11px; color: var(--sub); margin-top: 4px; min-height: 14px; }
+.role-status.ok { color: var(--green); }
+.role-status.err { color: #ff4060; }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
@@ -280,6 +300,23 @@ section { padding: 10px 12px; }
   border: 1px solid var(--border); color: var(--sub); padding: 2px 6px;
 }
 .key-chip.on { border-color: var(--green); color: var(--green); }
+
+/* ---------- fire agent (M6-1) ---------- */
+.agent-card .fire { font-size: 12px; padding: 2px 4px; }
+.agent-card .fire:hover { color: #ff4060; }
+#fire-backdrop {
+  position: fixed; inset: 0; background: rgba(5, 3, 12, 0.8);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+#fire-modal {
+  background: var(--panel); border: 1px solid #ff4060;
+  box-shadow: 0 0 24px rgba(255, 64, 96, 0.25);
+  padding: 16px; width: 86%; max-width: 280px;
+}
+#fire-modal h2 { font-family: var(--font-pixel); font-size: 9px; color: #ff4060; }
+.fire-text { font-family: var(--font-thai); font-size: 12px; color: var(--sub); margin-top: 8px; }
+.neon-btn.danger { border-color: #ff4060; color: #ff4060; }
+.neon-btn.danger:hover { background: #ff406022; box-shadow: 0 0 8px #ff406055; }
 
 /* ---------- agent gear + model modal (M4-6) ---------- */
 .agent-card .gear { font-size: 12px; padding: 2px 4px; }

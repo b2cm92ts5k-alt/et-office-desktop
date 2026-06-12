@@ -144,6 +144,7 @@ func _on_event(event: Dictionary) -> void:
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):
 				_release_spot(id)
+				_desk_of.erase(id)
 				_auto_slept.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)

@@ -50,7 +50,8 @@ function renderAgents() {
       `<span class="info"><div class="name">${esc(a.name)}</div>` +
       `<div class="role">${esc(a.role)} · ${cloud}${esc(a.llm.model)}</div></span>` +
       `<span class="pill" id="pill-${a.id}"></span>` +
-      `<button class="ghost gear" title="เลือก model" onclick="openModelPicker('${a.id}')">⚙</button>`;
+      `<button class="ghost gear" title="เลือก model" onclick="openModelPicker('${a.id}')">⚙</button>` +
+      `<button class="ghost fire" title="ไล่ออก" onclick="openFire('${a.id}')">✖</button>`;
     el.appendChild(card);
     setPill(a.id, a.status);
   }
@@ -73,6 +74,9 @@ function closeHire(ev) {
 }
 
 async function hireAgent() {
+  // มี role .md → parse รอบสุดท้ายก่อน (sync ฟอร์ม + system_prompt ให้ตรงเนื้อหาล่าสุด)
+  const mdText = document.getElementById("h-md-text").value.trim();
+  if (mdText && !(await parseRoleText())) return; // parse ไม่ผ่าน — สถานะโชว์ใน modal แล้ว
   const name = document.getElementById("h-name").value.trim();
   const role = document.getElementById("h-role").value.trim();
   if (!name || !role) return;
@@ -82,6 +86,7 @@ async function hireAgent() {
     color: document.getElementById("h-color").value,
     keywords: document.getElementById("h-keywords").value
       .split(",").map(s => s.trim()).filter(Boolean),
+    system_prompt: mdText ? hireRolePrompt : "",
   };
   const res = await fetch(BASE + "/agents", {
     method: "POST",
@@ -89,12 +94,152 @@ async function hireAgent() {
     body: JSON.stringify(payload),
   });
   if (res.ok) {
-    feedLine("done", `จ้าง ${name} เข้าทีมแล้ว`);
+    feedLine("done", `จ้าง ${name} เข้าทีมแล้ว${mdText ? " (พร้อม role .md)" : ""}`);
+    if (mdText) {
+      // เก็บ .md เข้าคลัง daemon/roles/ ให้ใช้ซ้ำได้ (M6-2)
+      fetch(BASE + "/roles/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: name, text: mdText }),
+      }).catch(() => {});
+    }
+    resetRoleBox();
     document.getElementById("hire-backdrop").classList.add("hidden");
     loadAgents();
   } else {
     feedLine("error", `จ้างไม่สำเร็จ (${res.status})`);
   }
+}
+
+/* ---------- hire role .md (M6-2/M6-3) ---------- */
+
+let hireRolePrompt = ""; // system_prompt จาก .md ที่ parse ผ่านล่าสุด
+
+function roleUpload() { document.getElementById("h-md-file").click(); }
+
+function roleEditor() {
+  document.getElementById("h-md-text").classList.remove("hidden");
+  document.getElementById("h-draft-row").classList.add("hidden");
+}
+
+function roleDraftRow() {
+  document.getElementById("h-draft-row").classList.remove("hidden");
+  document.getElementById("h-md-text").classList.remove("hidden");
+}
+
+function roleFileChosen(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const ta = document.getElementById("h-md-text");
+    ta.value = String(reader.result);
+    ta.classList.remove("hidden");
+    parseRoleText();
+  };
+  reader.readAsText(f);
+  input.value = "";
+}
+
+async function parseRoleText() {
+  // ใช้ POST /roles/upload เดิม (M1-10) — ห่อ text เป็นไฟล์เสมือนผ่าน FormData
+  const text = document.getElementById("h-md-text").value.trim();
+  const status = document.getElementById("h-role-status");
+  if (!text) { hireRolePrompt = ""; status.textContent = ""; return null; }
+  const fd = new FormData();
+  fd.append("file", new File([text], "editor.md", { type: "text/markdown" }));
+  try {
+    const res = await fetch(BASE + "/roles/upload", { method: "POST", body: fd });
+    if (!res.ok) throw new Error(res.status);
+    const p = await res.json();
+    if (p.name) document.getElementById("h-name").value = p.name;
+    if (p.role) document.getElementById("h-role").value = p.role;
+    if (p.keywords.length) document.getElementById("h-keywords").value = p.keywords.join(", ");
+    if (p.avatar) document.getElementById("h-avatar").value = p.avatar;
+    const colorSel = document.getElementById("h-color");
+    if ([...colorSel.options].some(o => o.value === p.color)) colorSel.value = p.color;
+    hireRolePrompt = p.system_prompt || "";
+    status.textContent = `✓ role พร้อม — ${p.name} · ${p.keywords.length} keywords · prompt ${hireRolePrompt.length} ตัวอักษร`;
+    status.className = "role-status ok";
+    return p;
+  } catch {
+    hireRolePrompt = "";
+    status.textContent = "✗ parse .md ไม่ได้ — เช็ค format / daemon เปิดอยู่ไหม?";
+    status.className = "role-status err";
+    return null;
+  }
+}
+
+function roleTextTouched() {
+  const status = document.getElementById("h-role-status");
+  status.textContent = "แก้ไขแล้ว — จะ parse อีกครั้งตอนกด HIRE";
+  status.className = "role-status";
+}
+
+async function draftRole() {
+  const desc = document.getElementById("h-draft-desc").value.trim();
+  const btn = document.getElementById("h-draft-btn");
+  if (!desc) return;
+  btn.disabled = true;
+  btn.textContent = "กำลังร่าง…";
+  try {
+    const res = await fetch(BASE + "/roles/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: desc }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const ta = document.getElementById("h-md-text");
+    ta.value = data.text;
+    ta.classList.remove("hidden");
+    await parseRoleText();
+  } catch {
+    feedLine("error", "AI ร่าง role ไม่สำเร็จ — Ollama/daemon เปิดอยู่ไหม?");
+  }
+  btn.disabled = false;
+  btn.textContent = "ร่าง";
+}
+
+function resetRoleBox() {
+  document.getElementById("h-md-text").value = "";
+  document.getElementById("h-md-text").classList.add("hidden");
+  document.getElementById("h-draft-row").classList.add("hidden");
+  document.getElementById("h-draft-desc").value = "";
+  document.getElementById("h-role-status").textContent = "";
+  hireRolePrompt = "";
+}
+
+/* ---------- fire agent (M6-1) ---------- */
+
+let fireId = null;
+
+function openFire(agentId) {
+  const a = agents[agentId];
+  if (!a) return;
+  fireId = agentId;
+  document.getElementById("f-agent-name").textContent = a.name;
+  document.getElementById("fire-backdrop").classList.remove("hidden");
+}
+
+function closeFire(ev) {
+  if (ev && ev.target.id !== "fire-backdrop") return;
+  document.getElementById("fire-backdrop").classList.add("hidden");
+  fireId = null;
+}
+
+async function confirmFire() {
+  if (!fireId) return;
+  const name = nameOf(fireId);
+  const res = await fetch(BASE + `/agents/${fireId}`, { method: "DELETE" });
+  if (res.ok) {
+    feedLine("ln", `ไล่ ${esc(name)} ออกจากทีมแล้ว`);
+    loadAgents(); // WS agent.deleted refresh ซ้ำอยู่แล้ว — อันนี้กัน WS ช้า
+  } else {
+    feedLine("error", `ไล่ออกไม่สำเร็จ (${res.status})`);
+  }
+  document.getElementById("fire-backdrop").classList.add("hidden");
+  fireId = null;
 }
 
 /* ---------- terminal (M4-5) ---------- */
