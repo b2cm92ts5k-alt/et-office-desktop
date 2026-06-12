@@ -8,7 +8,9 @@ class_name AgentSprite
 const SHEET_DIR := "res://assets/sprites/characters/"
 const SPRITES_URL := "http://localhost:8797/sprites/files/"  # custom sheet จาก daemon (M6-2 v2)
 const FRAME_COLS := 6        # walk 6 เฟรม
-const FRAME_ROWS := 4        # ทิศ: SE, SW, NE, NW
+const FRAME_ROWS := 4        # แถวเดิน: SE, SW, NE, NW (แถวบนสุดของทุก layout)
+const CELL_H := 48           # ความสูงต่อเฟรมคงที่ — แผ่นเต็ม v2 (192x528) มี 11 แถว
+                             # ตอนนี้เล่นเฉพาะแถวเดิน — อนิเมชัน idle/sit/sleep รอ CEO สั่ง
 const WALK_FPS := 8.0        # ตาม ART-SPEC
 const WALK_SPEED := 48.0     # px/วินาที (1.5 tiles/s)
 
@@ -77,7 +79,8 @@ func setup(id: String, display_name: String, sprite_key: String, color: Color,
 
 
 func _fetch_custom_sheet(file: String) -> void:
-	## spritesheet ที่ user อัพโหลด (M6-2 v2) — daemon validate 192x192 PNG มาแล้ว
+	## spritesheet ที่ user อัพโหลด (M6-2 v2) — daemon validate ขนาดมาแล้ว
+	## รองรับ 192x192 (เดิน 4 แถว) และ 192x528 (เต็ม 11 แถว — index แถวเดินตรงกัน)
 	var req := HTTPRequest.new()
 	add_child(req)
 	req.request_completed.connect(func(_r: int, code: int, _h: PackedStringArray,
@@ -88,8 +91,9 @@ func _fetch_custom_sheet(file: String) -> void:
 		var img := Image.new()
 		if img.load_png_from_buffer(body) != OK:
 			return
+		_sprite.vframes = maxi(1, img.get_height() / CELL_H)
 		_sprite.texture = ImageTexture.create_from_image(img)
-		_sprite.offset = Vector2(0, -float(_sprite.texture.get_height()) / FRAME_ROWS / 2.0)
+		_sprite.offset = Vector2(0, -CELL_H / 2.0)
 		_update_frame())
 	req.request(SPRITES_URL + file)
 

@@ -60,7 +60,19 @@
 | เอกลักษณ์ role | สีชุด + accessory: Producer=headset, Coder=แว่น, Designer=ผ้ากันเปื้อน/ปากกา, Research=แท็บเล็ต |
 | Aura ring | **ไม่วาดใน sprite** — Godot วาดเอง (neon_aura.gd) |
 
-**Spritesheet layout ต่อ 1 ตัวละคร:** แถว = ทิศ (SE,SW,NE,NW), คอลัมน์ = frame → ไฟล์เดียว `char_<role>.png` ขนาด 192×192 px (6 cols × 4 rows)
+**Spritesheet layout v2 ต่อ 1 ตัวละคร** (CEO อนุมัติ มิ.ย. 2026 — ใช้กับ custom sheet ที่ user อัพโหลดด้วย M6-2):
+ไฟล์เดียว **192×528 px** ช่องละ 32×48, 6 คอลัมน์ — คอลัมน์ = frame:
+
+| แถว | ท่า | เฟรม |
+|---|---|---|
+| 1-4 | WALK SE/SW/NE/NW | 6 |
+| 5-8 | IDLE SE/SW/NE/NW | 4 |
+| 9-10 | SIT+TYPE SE/SW | 4 |
+| 11 | SLEEP | 2 |
+
+- ช่องที่เกินจำนวนเฟรมปล่อยโปร่งใส / template จาก `GET /sprites/template` ถมเข้ม+กากบาทไว้ให้
+- **back-compat:** แผ่น 192×192 (เฉพาะ 4 แถวเดิน — layout เดิม) ยังใช้ได้ engine ดูจากความสูงไฟล์
+- ตัว default `char_<role>.png` ยังเป็น 192×192 จนกว่า A-4 จะวาดท่าเพิ่ม
 
 ## 4. Furniture & Props
 
