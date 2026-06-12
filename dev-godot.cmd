@@ -1,11 +1,12 @@
 @echo off
-REM ET Office — เปิด Godot โหมด window สำหรับตรวจภาพ (ดับเบิลคลิกได้เลย)
-REM ส่ง arg เพิ่มได้ เช่น:  dev-godot.cmd --wallpaper   หรือ  dev-godot.cmd --write-movie demo.avi --fixed-fps 30
+REM ET Office - open Godot in window mode for visual checks (double-click to run)
+REM Extra args pass through, e.g.:  dev-godot.cmd --wallpaper
+REM                                 dev-godot.cmd --write-movie demo.avi --fixed-fps 30
 cd /d "%~dp0"
 set "GODOT="
 for /f "delims=" %%G in ('dir /b /s "%LOCALAPPDATA%\Microsoft\WinGet\Packages\Godot_v*-stable_win64.exe" 2^>nul') do set "GODOT=%%G"
 if not defined GODOT (
-    echo [ET OFFICE] หา Godot ไม่เจอใน WinGet Packages — ติดตั้งด้วย: winget install GodotEngine.GodotEngine
+    echo [ET OFFICE] Godot not found in WinGet Packages - install with: winget install GodotEngine.GodotEngine
     pause
     exit /b 1
 )
