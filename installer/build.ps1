@@ -1,4 +1,4 @@
-# ET Office — build .exe ด้วย PyInstaller (M5-3)
+﻿# ET Office — build .exe ด้วย PyInstaller (M5-3)
 # รัน:  powershell -ExecutionPolicy Bypass -File installer\build.ps1
 # ได้:  dist\ET-Office\  (ET-Office.exe + et-office-daemon.exe + et-office-sidebar.exe)
 $ErrorActionPreference = "Stop"
