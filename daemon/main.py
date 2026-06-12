@@ -14,7 +14,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 load_dotenv(Path(__file__).parent / ".env")  # โหลดก่อน import modules ที่อ่าน env
 
 from .database import init_db                              # noqa: E402
-from .routes import agents, events, logs, proposals, roles, settings, sprites, system, tasks  # noqa: E402
+from .routes import agents, events, logs, permissions, proposals, roles, settings, sprites, system, tasks  # noqa: E402
+from .services.permission_gate import permission_gate      # noqa: E402
 from .services.social_service import social_service        # noqa: E402
 from .services.ws_manager import ws_manager                # noqa: E402
 
@@ -22,6 +23,8 @@ from .services.ws_manager import ws_manager                # noqa: E402
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    import asyncio
+    permission_gate.attach_loop(asyncio.get_running_loop())  # broadcast จาก task thread (M6-8)
     social_service.start()  # idle social loop (M3-9)
     yield
     social_service.stop()
@@ -54,6 +57,7 @@ app.include_router(events.router)
 app.include_router(logs.router)
 app.include_router(proposals.router)
 app.include_router(sprites.router)
+app.include_router(permissions.router)
 
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 

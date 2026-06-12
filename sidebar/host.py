@@ -84,6 +84,9 @@ class SidebarWindow:
                                             data.get("h", TERMINAL_DEFAULT_H))
                         elif tray is None:
                             continue
+                        elif mtype == "permission.request":
+                            tray.notify("🔐 ทีมขออนุญาต",
+                                        _trim(data.get("summary", ""), 120))
                         elif mtype == "agent.status":
                             if data.get("status") in ("working", "thinking"):
                                 working.add(data.get("agent_id", ""))

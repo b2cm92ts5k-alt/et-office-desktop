@@ -137,6 +137,17 @@ class RolePreset(BaseModel):
     system_prompt: str = ""
 
 
+class PermissionRespond(BaseModel):
+    """M6-8 — คำตอบของผู้ใช้ต่อคำขอ action"""
+    request_id: str
+    decision: Literal["approve", "deny", "approve_task"]
+
+
+class WorkspaceSettings(BaseModel):
+    """M6-6 — โฟลเดอร์ workspace ของทีม ("" = ปิด tool use)"""
+    path: str = ""
+
+
 class RoleDraftRequest(BaseModel):
     """M6-3 — ให้ AI ร่างไฟล์ role .md จากคำอธิบายสั้น ๆ"""
     description: str

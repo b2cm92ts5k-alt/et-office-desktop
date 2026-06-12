@@ -336,11 +336,12 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
   font-family: var(--font-thai); font-size: 12px; color: var(--sub);
   margin-bottom: 6px;
 }
-.set-row select, .set-row input[type="password"], .set-row input[type="number"] {
+.set-row select, .set-row input[type="password"], .set-row input[type="number"],
+.set-row input[type="text"] {
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   font-family: var(--font-mono); font-size: 11px; padding: 4px 6px;
 }
-.key-row input[type="password"] { flex: 1; min-width: 80px; }
+.key-row input[type="password"], .key-row input[type="text"] { flex: 1; min-width: 80px; }
 .set-row .num { width: 56px; }
 .set-row label.inline { display: flex; align-items: center; gap: 4px; }
 .key-chip {
@@ -348,6 +349,29 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
   border: 1px solid var(--border); color: var(--sub); padding: 2px 6px;
 }
 .key-chip.on { border-color: var(--green); color: var(--green); }
+
+/* ---------- permission dialog (M6-8) ---------- */
+#perm-backdrop {
+  position: fixed; inset: 0; background: rgba(5, 3, 12, 0.85);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+#perm-modal {
+  background: var(--panel); border: 1px solid var(--gold);
+  box-shadow: 0 0 24px rgba(255, 224, 64, 0.25);
+  padding: 16px; width: 92%; max-width: 296px;
+}
+#perm-modal h2 { font-family: var(--font-pixel); font-size: 9px; color: var(--gold); }
+.perm-agent { font-family: var(--font-mono); font-size: 11px; color: var(--cyan); margin-top: 8px; }
+.perm-summary { font-family: var(--font-thai); font-size: 13px; color: var(--text); margin-top: 6px; }
+.perm-detail {
+  font-family: var(--font-mono); font-size: 10px; color: var(--sub);
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 6px; margin-top: 6px; max-height: 110px; overflow: auto;
+  white-space: pre-wrap; word-break: break-all;
+}
+.perm-queue { font-family: var(--font-thai); font-size: 11px; color: var(--orange); margin-top: 6px; min-height: 13px; }
+.perm-note { font-family: var(--font-thai); font-size: 10px; color: var(--sub); margin-top: 8px; text-align: right; }
+#perm-modal .modal-actions .ok { border-color: var(--green); color: var(--green); }
 
 /* ---------- fire agent (M6-1) ---------- */
 .agent-card .fire { font-size: 12px; padding: 2px 4px; }

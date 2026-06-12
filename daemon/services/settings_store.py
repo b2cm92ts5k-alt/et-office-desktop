@@ -14,6 +14,7 @@ DEFAULTS: dict = {
     "social_interval_sec": 300,      # เช็คทุก 5 นาที (blueprint)
     "social_chance": 0.3,            # 30% ต่อรอบ
     "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
+    "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
 }
 
 

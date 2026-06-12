@@ -67,6 +67,13 @@
         <button class="neon-btn atmo" data-mode="night" onclick="setAtmosphere('night')">🌙</button>
       </div>
 
+      <h3>WORKSPACE — โฟลเดอร์งานของทีม (M6-6)</h3>
+      <div class="set-row key-row">
+        <input id="ws-path" type="text" placeholder="เช่น D:\งานทีม ET" autocomplete="off">
+        <button class="neon-btn" onclick="saveWorkspace()">SAVE</button>
+      </div>
+      <div id="ws-status" class="set-row">…</div>
+
       <h3>API KEYS — cloud (optional)</h3>
       <div class="set-row key-row">
         <select id="key-provider">
@@ -133,6 +140,23 @@
       <button class="ghost" onclick="closeHire()">ยกเลิก</button>
       <button class="neon-btn" onclick="hireAgent()">HIRE</button>
     </div>
+  </div>
+</div>
+
+<!-- Permission dialog (M6-8) — ทุก action ของ agent ต้องผ่านที่นี่ ปิดเองไม่ได้ ต้องตอบ -->
+<div id="perm-backdrop" class="hidden">
+  <div id="perm-modal">
+    <h2>🔐 ขออนุญาตทำ ACTION</h2>
+    <div id="perm-agent" class="perm-agent"></div>
+    <div id="perm-summary" class="perm-summary"></div>
+    <pre id="perm-detail" class="perm-detail hidden"></pre>
+    <div id="perm-queue" class="perm-queue"></div>
+    <div class="modal-actions">
+      <button class="ghost no" onclick="respondPerm('deny')">✗ ปฏิเสธ</button>
+      <button class="neon-btn" onclick="respondPerm('approve')">✓ อนุญาต</button>
+      <button class="neon-btn ok" onclick="respondPerm('approve_task')" title="action ที่เหลือของ task นี้ผ่านอัตโนมัติ">✓✓ ทั้ง task</button>
+    </div>
+    <div class="perm-note">ไม่ตอบใน 5 นาที = ปฏิเสธอัตโนมัติ</div>
   </div>
 </div>
 

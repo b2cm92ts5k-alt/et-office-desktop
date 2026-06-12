@@ -123,6 +123,12 @@ function handleEvent(ev) {
     case "proposal.created":
       feedLine("social", `💡 ข้อเสนอใหม่: <b>${esc(trim(d.title, 150))}</b> — Approve/Reject ใน panel หลัก`);
       break;
+    case "permission.request":
+      feedLine("route", `🔐 ${esc(d.agent_name || "")} ขอ: ${esc(d.summary)} — ตอบใน panel หลัก`);
+      break;
+    case "permission.auto":
+      feedLine("route", `⚙ ${esc(d.agent_name || "")}: ${esc(d.summary)} (อนุมัติยกชุด)`);
+      break;
   }
 }
 

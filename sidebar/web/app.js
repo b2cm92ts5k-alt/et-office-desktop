@@ -376,9 +376,91 @@ async function loadSettings() {
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
     document.getElementById("soc-chance").value = soc.social_chance;
     document.getElementById("soc-cooldown").value = Math.round(soc.proposal_cooldown_sec / 60);
+    const ws = await (await fetch(BASE + "/settings/workspace")).json();
+    document.getElementById("ws-path").value = ws.path;
+    renderWsStatus(ws);
   } catch {
     feedLine("error", "โหลด settings ไม่ได้");
   }
+}
+
+/* ---------- workspace (M6-6) ---------- */
+
+function renderWsStatus(ws) {
+  const el = document.getElementById("ws-status");
+  if (!ws.path) {
+    el.textContent = "ยังไม่ได้ตั้ง — agent ตอบแชทอย่างเดียว ไม่แตะไฟล์";
+  } else {
+    el.textContent = ws.valid
+      ? "✓ ทีมทำงานในโฟลเดอร์นี้ (ทุก action ขออนุญาตก่อนเสมอ)"
+      : "✗ โฟลเดอร์นี้หายไปแล้ว — agent จะใช้ tool ไม่ได้";
+  }
+}
+
+async function saveWorkspace() {
+  const path = document.getElementById("ws-path").value.trim();
+  const res = await fetch(BASE + "/settings/workspace", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (res.ok) {
+    renderWsStatus(await res.json());
+    feedLine("done", path ? `workspace → ${esc(path)}` : "ปิด workspace แล้ว");
+  } else {
+    const err = await res.json().catch(() => ({}));
+    document.getElementById("ws-status").textContent = `✗ ${err.detail || "บันทึกไม่สำเร็จ"}`;
+    feedLine("error", esc(err.detail || "ตั้ง workspace ไม่สำเร็จ"));
+  }
+}
+
+/* ---------- permission dialog (M6-8) ---------- */
+
+let permQueue = [];
+
+async function loadPermissions() {
+  try {
+    permQueue = await (await fetch(BASE + "/permissions")).json();
+    renderPerm();
+  } catch { /* daemon down — reconnect แล้วโหลดใหม่ */ }
+}
+
+function pushPerm(info) {
+  if (!permQueue.some(p => p.request_id === info.request_id)) permQueue.push(info);
+  renderPerm();
+}
+
+function renderPerm() {
+  const bd = document.getElementById("perm-backdrop");
+  if (permQueue.length === 0) {
+    bd.classList.add("hidden");
+    return;
+  }
+  const p = permQueue[0];
+  document.getElementById("perm-agent").textContent =
+    `${p.agent_name || p.agent_id} · task ${String(p.task_id).slice(0, 6)}`;
+  document.getElementById("perm-summary").textContent = p.summary;
+  const detail = document.getElementById("perm-detail");
+  detail.textContent = p.detail || "";
+  detail.classList.toggle("hidden", !p.detail);
+  document.getElementById("perm-queue").textContent =
+    permQueue.length > 1 ? `รออีก ${permQueue.length - 1} คำขอ` : "";
+  bd.classList.remove("hidden");
+}
+
+async function respondPerm(decision) {
+  const p = permQueue.shift();
+  renderPerm();
+  if (!p) return;
+  try {
+    await fetch(BASE + "/permissions/respond", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_id: p.request_id, decision }),
+    });
+  } catch { /* daemon จะ deny เองตอน timeout */ }
+  const labels = { approve: "✓ อนุญาต", deny: "✗ ปฏิเสธ", approve_task: "✓✓ อนุญาตทั้ง task" };
+  feedLine(decision === "deny" ? "error" : "done", `${labels[decision]}: ${esc(p.summary)}`);
 }
 
 function renderKeyStatus() {
@@ -524,6 +606,7 @@ function connectWs() {
     feedLine("done", "เชื่อมต่อ daemon แล้ว");
     loadAgents().then(runQaHooks);
     loadProposals();
+    loadPermissions(); // คำขอที่ค้างระหว่าง sidebar ปิดอยู่ (M6-8)
     if (!uiRestored) { uiRestored = true; restoreUiState(); }
   };
   ws.onclose = () => {
@@ -579,6 +662,17 @@ function handleEvent(ev) {
     case "proposal.approved":   // ตอบจาก client อื่น (API/เครื่องอื่น) ก็ต้อง refresh
     case "proposal.rejected":
       loadProposals();
+      break;
+    case "permission.request":
+      pushPerm(d);
+      break;
+    case "permission.resolved":
+      // ตอบจากที่อื่น/timeout — เอาออกจากคิวถ้ายังค้างอยู่
+      permQueue = permQueue.filter(p => p.request_id !== d.request_id);
+      renderPerm();
+      break;
+    case "permission.auto":
+      feedLine("route", `⚙ ${esc(d.agent_name || "")}: ${esc(d.summary)} (อนุมัติยกชุด)`);
       break;
     case "qa.ping":
       postQaReport();  // QA gate M4-11 ขอ snapshot สถานะ DOM

@@ -1,12 +1,13 @@
-"""/settings/apikey — เก็บ key ลง daemon/.env เท่านั้น ไม่ log ไม่ broadcast (M1-12)"""
+"""/settings — apikey (M1-12), social (M3-10), workspace (M6-6)
+apikey เก็บลง daemon/.env เท่านั้น ไม่ log ไม่ broadcast"""
 from pathlib import Path
 
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..adapters.llm_adapter import ENV_KEY_MAP
-from ..models.schemas import ApiKeyRequest, SocialSettings
+from ..models.schemas import ApiKeyRequest, SocialSettings, WorkspaceSettings
 from ..services.settings_store import settings_store
 
 router = APIRouter(tags=["settings"])
@@ -45,3 +46,19 @@ def get_social_settings() -> dict:
 def update_social_settings(payload: SocialSettings) -> dict:
     """มีผลรอบ loop ถัดไปทันที ไม่ต้อง restart daemon"""
     return settings_store.update(payload.model_dump(exclude_none=True))
+
+
+@router.get("/settings/workspace")
+def get_workspace() -> dict:
+    path = str(settings_store.get("workspace_path") or "")
+    return {"path": path, "valid": bool(path) and Path(path).is_dir()}
+
+
+@router.put("/settings/workspace")
+def set_workspace(payload: WorkspaceSettings) -> dict:
+    """ตั้งโฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use กลับเป็นแชทอย่างเดียว"""
+    path = payload.path.strip()
+    if path and not Path(path).is_dir():
+        raise HTTPException(400, f"ไม่พบโฟลเดอร์: {path}")
+    settings_store.update({"workspace_path": path})
+    return {"path": path, "valid": bool(path)}

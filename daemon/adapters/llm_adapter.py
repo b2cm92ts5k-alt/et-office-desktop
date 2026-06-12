@@ -31,9 +31,11 @@ class MissingAPIKeyError(Exception):
     pass
 
 
-def get_llm(cfg: LLMConfig) -> LLM:
+def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
+    """temperature ระบุได้สำหรับงานที่ต้อง deterministic (tool loop M6-9 ใช้ 0.2)"""
+    extra = {} if temperature is None else {"temperature": temperature}
     if cfg.provider == "ollama":
-        return LLM(model=f"ollama/{cfg.model}", base_url=OLLAMA_BASE_URL)
+        return LLM(model=f"ollama/{cfg.model}", base_url=OLLAMA_BASE_URL, **extra)
 
     env_var = ENV_KEY_MAP[cfg.provider]
     key = os.environ.get(env_var, "")
@@ -44,7 +46,7 @@ def get_llm(cfg: LLMConfig) -> LLM:
 
     model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
     prefix = {"claude": "anthropic", "gemini": "gemini", "openai": "openai"}[cfg.provider]
-    return LLM(model=f"{prefix}/{model}", api_key=key)
+    return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
 
 
 class VRAMDetector:
