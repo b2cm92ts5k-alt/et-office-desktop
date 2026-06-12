@@ -17,9 +17,11 @@ const NIGHT_CHECK_SEC := 60.0
 const DESK_SPOTS: Array[Vector2i] = [
 	Vector2i(7, 1), Vector2i(9, 1), Vector2i(11, 1),
 	Vector2i(7, 3), Vector2i(9, 3), Vector2i(11, 3),
+	Vector2i(7, 5), Vector2i(9, 5), Vector2i(11, 5),  # แถวสาม — OPS ขยาย (CEO มิ.ย. 2026)
 ]
 const ZONE_SPOTS := {
-	"cafe":    [Vector2i(8, 7), Vector2i(10, 8), Vector2i(9, 10), Vector2i(11, 6)],
+	# (11,6) เดิมกลายเป็น OPS หลังขยายโซน — ย้ายเข้า CAFE ใหม่ (y เริ่ม 7)
+	"cafe":    [Vector2i(8, 7), Vector2i(10, 8), Vector2i(9, 10), Vector2i(12, 9)],
 	"meeting": [Vector2i(2, 7), Vector2i(4, 8), Vector2i(2, 9), Vector2i(4, 10)],
 	"dorm":    [Vector2i(14, 7), Vector2i(16, 8), Vector2i(14, 9), Vector2i(16, 10)],
 }

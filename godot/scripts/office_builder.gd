@@ -11,10 +11,11 @@ const GRID_H := 12
 # zone: name, สี neon (จาก ART-SPEC), พื้นที่ grid Rect2i(x, y, w, h)
 const ZONES := [
 	{"name": "EXEC SUITE",  "color": Color("#ffe040"), "rect": Rect2i(0, 0, 6, 5)},
-	{"name": "OPS FLOOR",   "color": Color("#00e5ff"), "rect": Rect2i(6, 0, 7, 5)},
+	# OPS ขยายลง 2 แถว (CEO มิ.ย. 2026) — รับโต๊ะแถวสาม y=5, CAFE ขยับลงไป y=7
+	{"name": "OPS FLOOR",   "color": Color("#00e5ff"), "rect": Rect2i(6, 0, 7, 7)},
 	{"name": "SERVER",      "color": Color("#b060f0"), "rect": Rect2i(13, 0, 5, 5)},
 	{"name": "MEETING",     "color": Color("#ff4da6"), "rect": Rect2i(0, 5, 6, 7)},
-	{"name": "CAFE",        "color": Color("#ff6030"), "rect": Rect2i(6, 5, 7, 7)},
+	{"name": "CAFE",        "color": Color("#ff6030"), "rect": Rect2i(6, 7, 7, 5)},
 	{"name": "DORM",        "color": Color("#4080ff"), "rect": Rect2i(13, 5, 5, 7)},
 ]
 const ZONE_TINT := 0.16  # ผสมสี zone ลงพื้นแบบจาง — คุม brightness ≤60%
