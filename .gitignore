@@ -17,6 +17,7 @@ dist/
 *.sqlite3
 *.db
 daemon/data/
+sidebar/data/
 *.jsonl
 
 # --- Godot 4 ---

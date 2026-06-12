@@ -261,6 +261,45 @@ section { padding: 10px 12px; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* ---------- terminal window แยก (M6-4) ---------- */
+body.terminal {
+  display: flex; flex-direction: column;
+  height: 100vh;
+  border: 1px solid var(--border);
+}
+#term-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--panel2), transparent);
+  cursor: move; user-select: none;
+  flex: none;
+}
+#term-header h1 { flex: 1; }
+body.terminal #feed { flex: 1; margin: 8px 10px; }
+body.terminal #task-form { padding: 0 10px 10px; flex: none; }
+#grip {
+  position: fixed; right: 0; bottom: 0;
+  width: 20px; height: 20px;
+  color: var(--sub); font-size: 12px; line-height: 20px; text-align: center;
+  cursor: nwse-resize; user-select: none; touch-action: none;
+}
+#grip:hover { color: var(--cyan); }
+
+/* ---------- activity mini feed บน panel หลัก (terminal เต็มย้ายไปหน้าต่างแยก) ---------- */
+#activity-panel { border-bottom: 1px solid var(--border); }
+#mini-feed {
+  font-family: var(--font-mono); font-size: 10px; line-height: 1.6;
+  color: var(--sub); min-height: 48px;
+}
+#mini-feed .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mini-feed .ln.user   { color: var(--gold); }
+#mini-feed .ln.route  { color: var(--cyan); }
+#mini-feed .ln.done   { color: var(--green); }
+#mini-feed .ln.error  { color: var(--orange); }
+#mini-feed .ln.social { color: var(--pink); }
+#mini-feed .ln b { color: var(--text); }
+
 /* ---------- atmosphere picker (M4-10) ---------- */
 #atmo-row { gap: 4px; }
 .neon-btn.atmo { padding: 5px 7px; font-size: 9px; border-color: var(--border); color: var(--sub); }

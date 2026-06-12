@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ET Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="terminal">
+
+<!-- หัวหน้าต่าง = drag region ของ pywebview (ลากย้ายได้ทั้งแถบ) -->
+<div id="term-header" class="pywebview-drag-region">
+  <span id="daemon-dot" class="dot off pywebview-drag-region"></span>
+  <h1 class="pywebview-drag-region">ET TERMINAL</h1>
+  <button class="ghost" onclick="collapseAll()" title="หุบทั้งหมด (กลับมาที่เดิม)">»</button>
+</div>
+
+<div id="feed"></div>
+
+<form id="task-form" onsubmit="submitTask(); return false;">
+  <input id="task-input" type="text" placeholder="สั่งงานทีม… (Enter เพื่อส่ง)" autocomplete="off">
+  <button type="submit" class="neon-btn">SEND</button>
+</form>
+
+<!-- มุมจับปรับขนาด — frameless window ไม่มีขอบ resize ของ OS -->
+<div id="grip" title="ลากเพื่อปรับขนาด">◢</div>
+
+<script src="terminal.js"></script>
+</body>
+</html>

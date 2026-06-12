@@ -6,7 +6,6 @@
 const BASE = location.protocol.startsWith("http") ? "" : "http://localhost:8797";
 const WS_URL = "ws://" + (location.host || "localhost:8797") + "/ws";
 const RECONNECT_MS = 3000;
-const FEED_MAX_LINES = 200;
 
 const PILL_COLORS = {
   idle: "#8a8a9a", working: "#00e5ff", thinking: "#b060f0",
@@ -288,43 +287,18 @@ async function confirmFire() {
   fireId = null;
 }
 
-/* ---------- terminal (M4-5) ---------- */
+/* ---------- activity mini feed (M6-4 — terminal เต็มแยกไป terminal.html) ---------- */
+
+const MINI_FEED_LINES = 4;
 
 function feedLine(cls, html) {
-  const feed = document.getElementById("feed");
+  const feed = document.getElementById("mini-feed");
+  if (!feed) return;
   const div = document.createElement("div");
   div.className = "ln " + cls;
   div.innerHTML = html;
   feed.appendChild(div);
-  while (feed.children.length > FEED_MAX_LINES) feed.removeChild(feed.firstChild);
-  feed.scrollTop = feed.scrollHeight;
-}
-
-async function submitTask() {
-  const input = document.getElementById("task-input");
-  const msg = input.value.trim();
-  if (!msg) return;
-  input.value = "";
-  feedLine("user", `&gt; ${esc(msg)}`);
-  try {
-    const res = await fetch(BASE + "/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg }),
-    });
-    const data = await res.json();
-    const cfg = Object.values(agents).find(a => a.name === data.agent);
-    const model = cfg ? cfg.llm.model : "?";
-    feedLine("route", `→ มอบงานให้ <b>${esc(data.agent)}</b> (${esc(model)})`);
-  } catch (e) {
-    feedLine("error", "ส่ง task ไม่ได้ — daemon เปิดอยู่ไหม?");
-  }
-}
-
-/* QA hook — host.py --qa-task เรียกผ่าน evaluate_js เพื่อทดสอบ path จริง */
-function qaSubmit(text) {
-  document.getElementById("task-input").value = text;
-  submitTask();
+  while (feed.children.length > MINI_FEED_LINES) feed.removeChild(feed.firstChild);
 }
 
 /* ---------- proposals (M4-7) ---------- */
@@ -532,11 +506,10 @@ let qaFired = false;
 let uiRestored = false;
 
 function runQaHooks() {
-  // QA hooks จาก host.py --qa-task / --qa-toggle (ส่งมาทาง query param)
+  // QA hooks จาก host.py --qa-toggle/--qa-settings (qa_task ย้ายไป terminal.html — M6-4)
   if (qaFired) return;
   qaFired = true;
   const q = new URLSearchParams(location.search);
-  if (q.get("qa_task")) setTimeout(() => qaSubmit(q.get("qa_task")), 1500);
   if (q.get("qa_toggle")) {
     setTimeout(toggleSidebar, 3000);
     setTimeout(toggleSidebar, 6000);
@@ -679,7 +652,7 @@ function postQaReport() {
   const snap = {
     agents_rendered: document.querySelectorAll(".agent-card").length,
     proposals_rendered: document.querySelectorAll(".proposal-card").length,
-    feed_lines: document.getElementById("feed").children.length,
+    feed_lines: (document.getElementById("mini-feed") || { children: [] }).children.length,
     collapsed,
     settings_open: settingsOpen,
     vram_text: document.getElementById("vram-info").textContent,
