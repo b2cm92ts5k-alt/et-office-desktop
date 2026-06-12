@@ -73,6 +73,16 @@ function closeHire(ev) {
   document.getElementById("hire-backdrop").classList.add("hidden");
 }
 
+// สี aura อัตโนมัติ (M6-2 v2 — CEO เอา picker ออก): .md กำหนด color มา = ใช้ตามนั้น
+// ไม่งั้นเลือกจาก palette ART-SPEC ตามชื่อ (ชื่อเดิมได้สีเดิมเสมอ)
+const AURA_PALETTE = ["#e040fb", "#00e5ff", "#ff4da6", "#00ff9f", "#ffe040", "#ff6030"];
+
+function autoColor(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return AURA_PALETTE[h % AURA_PALETTE.length];
+}
+
 async function hireAgent() {
   // มี role .md → parse รอบสุดท้ายก่อน (sync ฟอร์ม + system_prompt ให้ตรงเนื้อหาล่าสุด)
   const mdText = document.getElementById("h-md-text").value.trim();
@@ -83,10 +93,11 @@ async function hireAgent() {
   const payload = {
     name, role,
     avatar: document.getElementById("h-avatar").value.trim() || "🤖",
-    color: document.getElementById("h-color").value,
+    color: hireRoleColor || autoColor(name),
     keywords: document.getElementById("h-keywords").value
       .split(",").map(s => s.trim()).filter(Boolean),
     system_prompt: mdText ? hireRolePrompt : "",
+    sprite: hireSprite,
   };
   const res = await fetch(BASE + "/agents", {
     method: "POST",
@@ -114,6 +125,8 @@ async function hireAgent() {
 /* ---------- hire role .md (M6-2/M6-3) ---------- */
 
 let hireRolePrompt = ""; // system_prompt จาก .md ที่ parse ผ่านล่าสุด
+let hireRoleColor = "";  // color จาก frontmatter .md (ว่าง = autoColor)
+let hireSprite = "";     // ไฟล์ spritesheet ที่อัพโหลดแล้ว (M6-2 v2)
 
 function roleUpload() { document.getElementById("h-md-file").click(); }
 
@@ -156,17 +169,46 @@ async function parseRoleText() {
     if (p.role) document.getElementById("h-role").value = p.role;
     if (p.keywords.length) document.getElementById("h-keywords").value = p.keywords.join(", ");
     if (p.avatar) document.getElementById("h-avatar").value = p.avatar;
-    const colorSel = document.getElementById("h-color");
-    if ([...colorSel.options].some(o => o.value === p.color)) colorSel.value = p.color;
+    // เก็บ color เฉพาะตอน .md ระบุเอง — RolePreset default คือ cyan ถ้าใช้ตรง ๆ จะทับมั่ว
+    hireRoleColor = /^---[\s\S]*?\bcolor\s*:/.test(text) ? p.color : "";
     hireRolePrompt = p.system_prompt || "";
     status.textContent = `✓ role พร้อม — ${p.name} · ${p.keywords.length} keywords · prompt ${hireRolePrompt.length} ตัวอักษร`;
     status.className = "role-status ok";
     return p;
   } catch {
     hireRolePrompt = "";
+    hireRoleColor = "";
     status.textContent = "✗ parse .md ไม่ได้ — เช็ค format / daemon เปิดอยู่ไหม?";
     status.className = "role-status err";
     return null;
+  }
+}
+
+/* ---------- custom spritesheet (M6-2 v2) ---------- */
+
+function spriteUpload() { document.getElementById("h-sprite-file").click(); }
+
+async function spriteFileChosen(input) {
+  const f = input.files && input.files[0];
+  input.value = "";
+  if (!f) return;
+  const status = document.getElementById("h-sprite-status");
+  const fd = new FormData();
+  fd.append("file", f);
+  try {
+    const res = await fetch(BASE + "/sprites/upload", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.status);
+    hireSprite = data.file;
+    const prev = document.getElementById("h-sprite-prev");
+    prev.src = BASE + data.url;
+    prev.classList.remove("hidden");
+    status.textContent = `✓ ใช้ spritesheet ที่อัพโหลด (${esc(f.name)})`;
+    status.className = "role-status ok";
+  } catch (e) {
+    hireSprite = "";
+    status.textContent = `✗ ${esc(e.message || "อัพโหลดไม่สำเร็จ")}`;
+    status.className = "role-status err";
   }
 }
 
@@ -207,7 +249,11 @@ function resetRoleBox() {
   document.getElementById("h-draft-row").classList.add("hidden");
   document.getElementById("h-draft-desc").value = "";
   document.getElementById("h-role-status").textContent = "";
+  document.getElementById("h-sprite-status").textContent = "";
+  document.getElementById("h-sprite-prev").classList.add("hidden");
   hireRolePrompt = "";
+  hireRoleColor = "";
+  hireSprite = "";
 }
 
 /* ---------- fire agent (M6-1) ---------- */

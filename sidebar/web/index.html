@@ -123,16 +123,17 @@
     <label>Role <input id="h-role" placeholder="Content Writer"></label>
     <label>Keywords (คั่นด้วย ,) <input id="h-keywords" placeholder="เขียน, บทความ, สคริปต์"></label>
     <label>Avatar <input id="h-avatar" value="🤖" maxlength="4"></label>
-    <label>สี aura
-      <select id="h-color">
-        <option value="#e040fb">Magenta</option>
-        <option value="#00e5ff">Cyan</option>
-        <option value="#ff4da6">Pink</option>
-        <option value="#00ff9f">Green</option>
-        <option value="#ffe040">Gold</option>
-        <option value="#ff6030">Orange</option>
-      </select>
+
+    <!-- Custom spritesheet (M6-2 v2) — PNG 192x192: 6 เฟรม x 4 ทิศ (SE,SW,NE,NW) ตาม ART-SPEC -->
+    <label>Spritesheet ตัวละคร (ไม่ใส่ = ใช้ตัว default ตาม role)
+      <div class="sprite-row">
+        <button type="button" class="neon-btn sm" onclick="spriteUpload()">📁 อัพโหลด PNG</button>
+        <a class="tmpl-link" href="http://localhost:8797/sprites/template" download>📥 template</a>
+        <img id="h-sprite-prev" class="sprite-prev hidden" alt="">
+      </div>
+      <div id="h-sprite-status" class="role-status"></div>
     </label>
+    <input id="h-sprite-file" type="file" accept=".png" class="hidden" onchange="spriteFileChosen(this)">
     <div class="modal-actions">
       <button class="ghost" onclick="closeHire()">ยกเลิก</button>
       <button class="neon-btn" onclick="hireAgent()">HIRE</button>

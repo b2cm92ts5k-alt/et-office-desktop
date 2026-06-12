@@ -249,6 +249,15 @@ section { padding: 10px 12px; }
 .role-status.ok { color: var(--green); }
 .role-status.err { color: #ff4060; }
 
+/* --- custom spritesheet (M6-2 v2) --- */
+.sprite-row { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.tmpl-link { font-family: var(--font-thai); font-size: 11px; color: var(--cyan); text-decoration: none; }
+.tmpl-link:hover { text-decoration: underline; }
+.sprite-prev {
+  width: 32px; height: 48px; object-fit: none; object-position: 0 0; /* โชว์เฟรมแรก SE */
+  image-rendering: pixelated; border: 1px solid var(--border); background: var(--bg);
+}
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 

@@ -33,6 +33,7 @@ class AgentConfig(BaseModel):
     keywords: list[str] = []
     system_prompt: str = ""
     backstory: str = ""
+    sprite: str = ""                # custom spritesheet ใน data/sprites/ (M6-2 v2)
     llm: LLMConfig = LLMConfig()
     status: AgentStatus = "idle"
 
@@ -45,6 +46,7 @@ class AgentCreate(BaseModel):
     keywords: list[str] = []
     system_prompt: str = ""
     backstory: str = ""
+    sprite: str = ""
     llm: LLMConfig = LLMConfig()
 
 
@@ -56,6 +58,7 @@ class AgentUpdate(BaseModel):
     keywords: Optional[list[str]] = None
     system_prompt: Optional[str] = None
     backstory: Optional[str] = None
+    sprite: Optional[str] = None
     llm: Optional[LLMConfig] = None
 
 

@@ -100,7 +100,8 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	var sprite := AgentSprite.new()
 	sprite.setup(id, str(cfg.get("name", "agent")),
 		_sprite_key_for(str(cfg.get("role", "")) + " " + str(cfg.get("name", ""))),
-		Color(str(cfg.get("color", "#00e5ff"))))
+		Color(str(cfg.get("color", "#00e5ff"))),
+		str(cfg.get("sprite", "")))  # custom spritesheet (M6-2 v2)
 	var desk := DESK_SPOTS[index % DESK_SPOTS.size()]
 	_desk_of[id] = desk
 	sprite.place_at(desk)

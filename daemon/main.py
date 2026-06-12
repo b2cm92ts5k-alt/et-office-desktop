@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 load_dotenv(Path(__file__).parent / ".env")  # โหลดก่อน import modules ที่อ่าน env
 
 from .database import init_db                              # noqa: E402
-from .routes import agents, events, logs, proposals, roles, settings, system, tasks  # noqa: E402
+from .routes import agents, events, logs, proposals, roles, settings, sprites, system, tasks  # noqa: E402
 from .services.social_service import social_service        # noqa: E402
 from .services.ws_manager import ws_manager                # noqa: E402
 
@@ -53,12 +53,17 @@ app.include_router(settings.router)
 app.include_router(events.router)
 app.include_router(logs.router)
 app.include_router(proposals.router)
+app.include_router(sprites.router)
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # serve หน้า sidebar (same-origin — fetch/WS ไม่ติด CORS/file:// ของ webview)
 _SIDEBAR_WEB = Path(__file__).parent.parent / "sidebar" / "web"
 if _SIDEBAR_WEB.is_dir():
-    from fastapi.staticfiles import StaticFiles  # noqa: E402
     app.mount("/sidebar", StaticFiles(directory=_SIDEBAR_WEB, html=True), name="sidebar")
+
+# custom spritesheets ที่ user อัพโหลด (M6-2 v2) — Godot โหลดจากที่นี่
+app.mount("/sprites/files", StaticFiles(directory=sprites.SPRITES_DIR), name="sprites")
 
 
 @app.websocket("/ws")

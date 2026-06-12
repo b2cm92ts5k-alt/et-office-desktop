@@ -6,6 +6,7 @@ class_name AgentSprite
 ## ถ้า layout เปลี่ยน แก้ค่ากลุ่ม const ด้านล่างที่เดียว
 
 const SHEET_DIR := "res://assets/sprites/characters/"
+const SPRITES_URL := "http://localhost:8797/sprites/files/"  # custom sheet จาก daemon (M6-2 v2)
 const FRAME_COLS := 6        # walk 6 เฟรม
 const FRAME_ROWS := 4        # ทิศ: SE, SW, NE, NW
 const WALK_FPS := 8.0        # ตาม ART-SPEC
@@ -34,7 +35,8 @@ var _path: Array[Vector2i] = []
 var _grid_pos: Vector2i = Vector2i.ZERO
 
 
-func setup(id: String, display_name: String, sprite_key: String, color: Color) -> void:
+func setup(id: String, display_name: String, sprite_key: String, color: Color,
+		custom_sprite: String = "") -> void:
 	agent_id = id
 	agent_name = display_name
 	aura_color = color
@@ -69,6 +71,27 @@ func setup(id: String, display_name: String, sprite_key: String, color: Color) -
 
 	y_sort_enabled = true
 	_update_frame()
+
+	if not custom_sprite.is_empty():
+		_fetch_custom_sheet(custom_sprite)  # โหลดทับทีหลัง — ระหว่างรอใช้ตัว default ไปก่อน
+
+
+func _fetch_custom_sheet(file: String) -> void:
+	## spritesheet ที่ user อัพโหลด (M6-2 v2) — daemon validate 192x192 PNG มาแล้ว
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(_r: int, code: int, _h: PackedStringArray,
+			body: PackedByteArray) -> void:
+		req.queue_free()
+		if code != 200:
+			return  # โหลดไม่ได้ — อยู่กับตัว default ต่อ
+		var img := Image.new()
+		if img.load_png_from_buffer(body) != OK:
+			return
+		_sprite.texture = ImageTexture.create_from_image(img)
+		_sprite.offset = Vector2(0, -float(_sprite.texture.get_height()) / FRAME_ROWS / 2.0)
+		_update_frame())
+	req.request(SPRITES_URL + file)
 
 
 func set_status(new_status: String) -> void:
