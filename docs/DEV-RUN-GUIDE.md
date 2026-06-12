@@ -164,10 +164,13 @@ powershell -ExecutionPolicy Bypass -File tools\qa_m2.ps1   # wallpaper embed + G
 powershell -ExecutionPolicy Bypass -File installer\build.ps1
 ```
 
-ได้ `dist\ET-Office\` (~374MB): `ET-Office.exe` (launcher) + `et-office-daemon.exe` +
-`et-office-sidebar.exe` — รันได้โดยไม่ต้องมี Python/venv บนเครื่อง
-ตัว wallpaper จาก Godot export (M5-4) วางเพิ่มเป็น `et-office-wallpaper.exe` ข้าง launcher
-(ยังไม่มี → launcher ข้าม Godot ให้เอง) | เครื่อง user ยังต้องมี Ollama + WebView2 (จัดการใน installer M5-2)
+ได้ `dist\ET-Office\` (~475MB) ครบชุด — รันได้โดยไม่ต้องมี Python/Godot บนเครื่อง:
+`ET-Office.exe` (launcher) + `et-office-daemon.exe` + `et-office-sidebar.exe` +
+`et-office-wallpaper.exe` (Godot export M5-4 — build.ps1 ทำให้อัตโนมัติถ้ามี Godot
+ในเครื่อง พร้อม copy `tools\*.ps1` ที่ packaged mode ต้องใช้)
+ครั้งแรกต้องมี export templates: ดาวน์โหลด `Godot_v4.6.3-stable_export_templates.tpz`
+จาก GitHub releases → แตก `templates/*` ไป `%APPDATA%\Godot\export_templates\4.6.3.stable\`
+เครื่อง user ยังต้องมี Ollama + WebView2 runtime (จัดการใน installer M5-2)
 
 ## 6. Troubleshooting
 

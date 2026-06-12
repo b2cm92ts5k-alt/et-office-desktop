@@ -14,7 +14,25 @@ Write-Host "[BUILD] PyInstaller..." -ForegroundColor Cyan
     --distpath dist --workpath build
 if ($LASTEXITCODE -ne 0) { Write-Host "[BUILD] FAILED"; exit 1 }
 
-# ตัว Godot export (M5-4) วางเพิ่มเองที่ dist\ET-Office\et-office-wallpaper.exe
 $out = Join-Path $repo "dist\ET-Office"
+
+# --- Godot export (M5-4): et-office-wallpaper.exe + tools ps1 ข้าง launcher ---
+$godot = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse `
+    -Filter "Godot_v*-stable_win64.exe" -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $godot -and $env:GODOT_PATH) { $godot = $env:GODOT_PATH }
+if ($godot) {
+    Write-Host "[BUILD] Godot export..." -ForegroundColor Cyan
+    & $godot --headless --path (Join-Path $repo "godot") --export-release "Windows Desktop" `
+        (Join-Path $out "et-office-wallpaper.exe")
+    if ($LASTEXITCODE -ne 0) { Write-Host "[BUILD] Godot export FAILED"; exit 1 }
+    # wallpaper_manager.gd (packaged mode) หา exe_dir\tools\wallpaper.ps1
+    New-Item -ItemType Directory -Force (Join-Path $out "tools") | Out-Null
+    Copy-Item (Join-Path $repo "tools\wallpaper.ps1"), (Join-Path $repo "tools\fullscreen-watch.ps1") `
+        (Join-Path $out "tools\")
+} else {
+    Write-Host "[BUILD] skip Godot export - Godot not found (winget install GodotEngine.GodotEngine)"
+}
+
 $size = "{0:N0} MB" -f ((Get-ChildItem $out -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 Write-Host "[BUILD] done -> $out ($size)" -ForegroundColor Green

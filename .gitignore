@@ -22,8 +22,8 @@ sidebar/data/
 
 # --- Godot 4 ---
 godot/.godot/
-godot/export_presets.cfg
 *.translation
+# export_presets.cfg track ได้ — ไม่มี signing key/secret (M5-4 ต้องใช้ build ซ้ำได้)
 
 # --- OS / editor ---
 Thumbs.db
