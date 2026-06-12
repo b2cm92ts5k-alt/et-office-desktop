@@ -19,7 +19,8 @@ import yaml
 
 from ..models.schemas import RolePreset
 
-ROLES_DIR = Path(__file__).parent.parent / "roles"
+ROLES_DIR = Path(__file__).parent.parent / "roles"               # preset (อยู่ใน git)
+USER_ROLES_DIR = Path(__file__).parent.parent / "data" / "roles"  # ของ user (นอก git — M6-2)
 
 
 def _as_keyword_list(raw) -> list[str]:
@@ -53,8 +54,18 @@ def parse_role_md(text: str, filename: str = "") -> RolePreset:
 
 
 def load_preset_roles() -> list[RolePreset]:
+    """เฉพาะ preset ใน repo — ใช้ seed ทีมเริ่มต้น"""
+    return _load_dir(ROLES_DIR)
+
+
+def load_all_roles() -> list[RolePreset]:
+    """preset + role ที่ user สร้างเอง (data/roles) — ใช้กับ GET /roles"""
+    return _load_dir(ROLES_DIR) + _load_dir(USER_ROLES_DIR)
+
+
+def _load_dir(directory: Path) -> list[RolePreset]:
     presets = []
-    if ROLES_DIR.exists():
-        for f in sorted(ROLES_DIR.glob("*.md")):
+    if directory.exists():
+        for f in sorted(directory.glob("*.md")):
             presets.append(parse_role_md(f.read_text(encoding="utf-8"), f.name))
     return presets

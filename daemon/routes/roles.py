@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 
 from ..adapters.llm_adapter import get_llm
 from ..models.schemas import LLMConfig, RoleDraftRequest, RolePreset, RoleSaveRequest
-from ..services.role_parser import ROLES_DIR, load_preset_roles, parse_role_md
+from ..services.role_parser import USER_ROLES_DIR, load_all_roles, parse_role_md
 
 router = APIRouter(tags=["roles"])
 
@@ -39,7 +39,7 @@ def _clean_draft(text: str) -> str:
 
 @router.get("/roles")
 def list_roles() -> list[RolePreset]:
-    return load_preset_roles()
+    return load_all_roles()
 
 
 @router.post("/roles/upload")
@@ -66,15 +66,15 @@ async def draft_role(payload: RoleDraftRequest) -> dict:
 
 @router.post("/roles/save")
 def save_role(payload: RoleSaveRequest) -> RolePreset:
-    """M6-2 — บันทึก .md ลง daemon/roles/ ให้โผล่ใน GET /roles ใช้ซ้ำได้"""
+    """M6-2 — บันทึก .md ของ user ลง data/roles/ (นอก git) ให้โผล่ใน GET /roles ใช้ซ้ำได้"""
     text = payload.text.strip()
     if not text:
         raise HTTPException(400, "ไฟล์ว่าง")
     preset = parse_role_md(text, payload.filename or "custom.md")
     stem_src = payload.filename.removesuffix(".md") if payload.filename else preset.name
     stem = re.sub(r"[^a-zA-Z0-9_-]+", "-", stem_src).strip("-").lower() or "custom"
-    ROLES_DIR.mkdir(exist_ok=True)
-    path = ROLES_DIR / f"{stem}.md"
+    USER_ROLES_DIR.mkdir(parents=True, exist_ok=True)
+    path = USER_ROLES_DIR / f"{stem}.md"
     path.write_text(text, encoding="utf-8")
     preset.file = path.name
     return preset

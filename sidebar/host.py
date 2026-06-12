@@ -195,6 +195,8 @@ def main() -> None:
         threading.Thread(target=sb.listen_toggle, args=(tray,), daemon=True).start()
 
     # private_mode=False — เก็บ localStorage ข้ามรอบ (ปิด-เปิดแล้ว state คืนได้, M4-11)
+    # ALLOW_DOWNLOADS — ปุ่มดาวน์โหลด template spritesheet ใน hire dialog (M6-2 v2)
+    webview.settings["ALLOW_DOWNLOADS"] = True
     webview.start(after_start, private_mode=False)
 
 
