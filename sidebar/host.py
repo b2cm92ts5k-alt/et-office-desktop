@@ -162,6 +162,17 @@ class TerminalWindow:
         except Exception:
             pass  # state เป็นของแถม — อย่าให้ host ล้ม
 
+    def restore_geometry(self) -> None:
+        """create_window ตั้ง Size ตอนยังมี frame แล้วค่อยถอดเป็น frameless —
+        ขนาดจริงเลยหดเท่าขอบ window (~16×39px) ทุกครั้งที่เปิด (QA M6-10 จับได้)
+        จึง enforce ขนาด+ตำแหน่งที่จำไว้ซ้ำหลัง start ซึ่ง resize/move
+        ทำงานบนหน้าต่าง frameless แล้ว หน่วยตรงกับที่ save ไว้"""
+        if not self.window:
+            return
+        x, y, w, h = self.initial_rect()
+        self.window.resize(w, h)
+        self.window.move(x, y)
+
     def set_visible(self, on: bool) -> None:
         if not self.window:
             return
@@ -295,6 +306,7 @@ def main() -> None:
 
     def after_start() -> None:
         sb._snap()
+        term.restore_geometry()
         tray.start()
         threading.Thread(target=sb.listen_toggle, args=(tray, term), daemon=True).start()
 

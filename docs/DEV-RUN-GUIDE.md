@@ -145,6 +145,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8797/task -ContentType "app
 powershell -ExecutionPolicy Bypass -File tools\qa_m2.ps1   # wallpaper embed + GPU <20% + fullscreen pause
 .venv\Scripts\python.exe tools\qa_m3.py                    # agent เดิน/status sync (daemon ต้องรัน)
 .venv\Scripts\python.exe tools\qa_m4.py                    # sidebar (daemon ต้องรัน)
+.venv\Scripts\python.exe tools\qa_m6.py                    # agent workforce: hire/fire + workspace tools + permission gate (daemon + Ollama ต้องรัน)
 ```
 
 ⚠️ `qa_m2.ps1` จะสลับ wallpaper จริง + เด้งหน้าต่างดำ ~8 วิ — อย่ารันระหว่างอัดวิดีโอ
