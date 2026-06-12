@@ -150,3 +150,29 @@ powershell -ExecutionPolicy Bypass -File tools\qa_m2.ps1   # wallpaper embed + G
 | wallpaper ไม่ฝัง | อ่าน `wm_debug.txt` (path ข้อ 3) — ดูบรรทัด `attach spawned` / `script not found` |
 | ภาพค้าง/fps ตก | มี fullscreen app ทับอยู่หรือเปล่า (pause by design) |
 | hologram bubble ไม่ขึ้น | ต้องมี daemon + agent อยู่ในสถานะ THINKING หรือมี event ให้พูด (ข้อ 4.2) |
+
+## 7. ปิดให้หมด
+
+ทีละตัว (นุ่มนวลสุด):
+
+1. **Sidebar** — คลิกขวา tray icon ET → "ออกจาก ET Office"
+2. **Godot** — โหมด window กด X / Alt+F4 — โหมด wallpaper ไม่มี X ให้กด ใช้:
+   ```powershell
+   Get-Process Godot* -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() }
+   ```
+   ⚠️ ห้าม `Stop-Process -Force` ตอนเป็น wallpaper — WM_CLOSE คือตัว trigger detach +
+   คืน wallpaper เดิม + คืน Wallpaper Engine (M2-14)
+3. **Daemon** — Ctrl+C ใน terminal ที่รัน uvicorn
+
+หรือปิดทั้งหมดคำสั่งเดียว:
+
+```powershell
+Get-Process Godot* -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() }
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -match 'uvicorn daemon|sidebar\\host' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false }
+```
+
+- `fullscreen-watch.ps1` เบื้องหลังปิดตัวเองตาม Godot — ไม่ต้องจัดการ
+- ถ้าเผลอ force kill Godot ตอนเป็น wallpaper แล้วจอค้าง: คลิกขวา desktop → Refresh
+  หรือตั้ง wallpaper ใหม่ใน Settings → Personalization
