@@ -13,9 +13,13 @@ cd "D:\Project\ETLOLZ\Project in content\ET office desktop wallpaper\et-office-d
 
 | ไฟล์ | ทำอะไร |
 |---|---|
-| `et-office.cmd` | เปิด daemon (port 8797) |
-| `dev-godot.cmd` | เปิด Godot โหมด window — ส่ง arg ได้ เช่น `dev-godot.cmd --wallpaper` |
-| `dev-sidebar.cmd` | เปิด sidebar (daemon ต้องรันก่อน) |
+| `et-office.cmd` | **เปิดครบทุกตัวในคลิกเดียว** (daemon → Godot wallpaper → sidebar) — launcher M5-1 · args: `--window` (Godot เป็น window), `--no-godot`, `--no-sidebar` |
+| `dev-godot.cmd` | เปิด Godot โหมด window ตัวเดียว — ส่ง arg ได้ เช่น `dev-godot.cmd --wallpaper` |
+| `dev-sidebar.cmd` | เปิด sidebar ตัวเดียว (daemon ต้องรันก่อน) |
+
+ปิดทั้งระบบเมื่อเปิดผ่าน launcher: **Ctrl+C ที่หน้าต่าง launcher / ออกจาก tray ET /
+ปิดหน้าต่าง Godot** — ตัวใดตัวหนึ่งจบ launcher จะปิดที่เหลือให้ถูกลำดับเอง
+(Godot โดน WM_CLOSE เสมอ → detach + คืน wallpaper เดิม)
 
 ## 0. ของที่ต้องมี
 
@@ -57,7 +61,10 @@ powershell -ExecutionPolicy Bypass -File tools\screenshot.ps1 -OutPath out.png
 
 ## 2. โหมดครบวงจร (agent เดิน + ทำงานจริง)
 
-เปิด 3 terminal (หรือ `Start-Process` แยก):
+ทางลัดคำสั่งเดียว (M5-1): `.venv\Scripts\python.exe shell\launcher.py --window`
+(หรือ `et-office.cmd --window`) — เปิดครบ 3 ตัว จัดลำดับ + รอ /health ให้เอง
+
+หรือเปิดเองทีละตัวด้วย 3 terminal (debug แยกส่วน):
 
 ```powershell
 # terminal 1 — daemon (พอร์ต 8797)
