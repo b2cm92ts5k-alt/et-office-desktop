@@ -72,6 +72,9 @@ func setup(display_name: String, role_color: Color) -> void:
 	_bubble.patch_margin_bottom = BUBBLE_MARGIN
 	_bubble.size = Vector2(BUBBLE_WIDTH, BUBBLE_MIN_HEIGHT)
 	_bubble.visible = false
+	var holo := ShaderMaterial.new()
+	holo.shader = preload("res://shaders/hologram.gdshader")  # M2-8 — เฉพาะพื้น bubble, ตัวอักษร (child) ไม่โดน
+	_bubble.material = holo
 	_bubble_label = Label.new()
 	_bubble_label.add_theme_font_size_override("font_size", 8)
 	_bubble_label.add_theme_color_override("font_color", Color("#bff4ff"))

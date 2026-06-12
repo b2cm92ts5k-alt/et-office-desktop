@@ -3,7 +3,8 @@ extends Node2D
 ## สร้าง floor 20x14 + ผนัง + 6 zones (tint ตามสีประจำ zone จาก ART-SPEC)
 ## โครงสร้าง: $Floor (ไม่ y-sort — พื้นเรียบ), $World (y_sort_enabled — ผนัง/เฟอร์นิเจอร์/agent)
 
-# 18x12 = ใหญ่สุดที่ยังพอดี 1920x1080 ที่ integer zoom 2x (กฎ pixel-perfect ใน ART-SPEC)
+# 18x12 → world กว้าง 960px — camera_rig.gd zoom 1.25 = 1200px บนจอ 1920
+# เหลือขอบข้างละ 360px ให้ sidebar/panel เปิดได้ไม่บังตัว office
 const GRID_W := 18
 const GRID_H := 12
 
@@ -18,8 +19,11 @@ const ZONES := [
 ]
 const ZONE_TINT := 0.16  # ผสมสี zone ลงพื้นแบบจาง — คุม brightness ≤60%
 
+const FLOOR_SHADER := preload("res://shaders/floor_reflect.gdshader")  # M2-9
+
 var _tile_a: Texture2D = preload("res://assets/sprites/furniture/tile_floor_a.png")
 var _tile_b: Texture2D = preload("res://assets/sprites/furniture/tile_floor_b.png")
+var _floor_mat: ShaderMaterial  # แชร์ตัวเดียวทุก tile — effect ต่อเนื่องผ่าน SCREEN_UV
 var _wall_n: Texture2D = preload("res://assets/sprites/furniture/wall_n.png")
 var _wall_w: Texture2D = preload("res://assets/sprites/furniture/wall_w.png")
 
@@ -35,12 +39,15 @@ func _ready() -> void:
 
 
 func _build_floor() -> void:
+	_floor_mat = ShaderMaterial.new()
+	_floor_mat.shader = FLOOR_SHADER
 	for gy in GRID_H:
 		for gx in GRID_W:
 			var s := Sprite2D.new()
 			s.texture = _tile_a if (gx + gy) % 2 == 0 else _tile_b
 			s.position = Iso.grid_to_screen(Vector2i(gx, gy))
 			s.modulate = _zone_tint(Vector2i(gx, gy))
+			s.material = _floor_mat
 			_floor.add_child(s)
 
 

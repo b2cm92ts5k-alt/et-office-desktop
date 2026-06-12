@@ -12,8 +12,8 @@
 | Projection | **Dimetric 2:1** (isometric แบบเกม) | มาตรฐาน pixel iso — เส้นทแยง 26.57° ไม่มี jaggies |
 | Base tile | **64 × 32 px** (กว้าง × สูง) | ละเอียดพอใส่ detail neon, ไม่ใหญ่เกินจน office ล้นจอ |
 | Wall height | 96 px (3 ชั้น tile) | ผนังสูงพอติด neon sign |
-| Render scale | **2×** ใน Godot (integer scaling เท่านั้น) | คมแบบ pixel art บน 1080p — ห้าม scale เศษส่วน |
-| Office footprint | ~20 × 14 tiles | ครอบ 6 zones พอดีบนจอ 1920×1080 ที่ scale 2× |
+| Render scale | camera zoom **1.25×** (asset วาด 1:1 — ห้าม scale เศษส่วนในตัว asset) | เผื่อขอบจอซ้าย/ขวา ≥360px ให้ sidebar (320px) เปิดได้ไม่บัง office — ยอมผ่อนกฎ integer zoom ตาม CEO request (มิ.ย. 2026) |
+| Office footprint | 18 × 12 tiles | world กว้าง 960px → 1200px ที่ zoom 1.25 อยู่กึ่งกลางจอ 1920×1080 เสมอ (camera_rig.gd) |
 | Z-sort | sort by (grid_y + grid_x) | ตรงกับ M2-6 — กำหนดตั้งแต่วาด: origin ของ sprite = จุดกึ่งกลางฐาน |
 
 ## 2. Color Palette (LOCKED — ห้ามเพิ่มสีนอก palette)

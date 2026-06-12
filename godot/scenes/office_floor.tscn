@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/office_floor.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/wallpaper_manager.gd" id="2"]
@@ -6,6 +6,11 @@
 [ext_resource type="Script" path="res://scripts/event_client.gd" id="4"]
 [ext_resource type="Script" path="res://scripts/agent_manager.gd" id="5"]
 [ext_resource type="Script" path="res://scripts/atmosphere.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="7"]
+[ext_resource type="Shader" path="res://shaders/scanline.gdshader" id="8"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_crt"]
+shader = ExtResource("8")
 
 [node name="OfficeFloor" type="Node2D"]
 script = ExtResource("1")
@@ -42,8 +47,19 @@ script = ExtResource("5")
 script = ExtResource("6")
 
 [node name="Camera" type="Camera2D" parent="."]
-position = Vector2(96, 200)
-zoom = Vector2(2, 2)
+position = Vector2(96, 192)
+zoom = Vector2(1.25, 1.25)
+script = ExtResource("7")
+
+[node name="CrtLayer" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="CrtOverlay" type="ColorRect" parent="CrtLayer"]
+material = SubResource("ShaderMaterial_crt")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="HudLayer" type="CanvasLayer" parent="."]
 layer = 1

@@ -31,8 +31,8 @@ func _ready() -> void:
 	_glow.texture = tex
 	_glow.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_glow.scale = Vector2(1.04, 1.1)  # ฟุ้งออกนอกขอบนิดเดียว
-	var mat := CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/neon_glow.gdshader")  # M2-8 — blend_add ในตัว shader
 	_glow.material = mat
 	add_child(_glow)
 
