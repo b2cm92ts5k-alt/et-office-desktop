@@ -35,4 +35,5 @@ Desktop.ini
 # --- build artifacts ---
 *.exe
 *.spec
+!installer/et-office.spec
 pyinstaller-build/

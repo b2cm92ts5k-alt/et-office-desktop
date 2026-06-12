@@ -157,6 +157,18 @@ powershell -ExecutionPolicy Bypass -File tools\qa_m2.ps1   # wallpaper embed + G
 
 ⚠️ `qa_m2.ps1` จะสลับ wallpaper จริง + เด้งหน้าต่างดำ ~8 วิ — อย่ารันระหว่างอัดวิดีโอ
 
+## 5.5 Build .exe แจกจ่าย (M5-3)
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r installer\requirements-build.txt   # ครั้งแรกครั้งเดียว
+powershell -ExecutionPolicy Bypass -File installer\build.ps1
+```
+
+ได้ `dist\ET-Office\` (~374MB): `ET-Office.exe` (launcher) + `et-office-daemon.exe` +
+`et-office-sidebar.exe` — รันได้โดยไม่ต้องมี Python/venv บนเครื่อง
+ตัว wallpaper จาก Godot export (M5-4) วางเพิ่มเป็น `et-office-wallpaper.exe` ข้าง launcher
+(ยังไม่มี → launcher ข้าม Godot ให้เอง) | เครื่อง user ยังต้องมี Ollama + WebView2 (จัดการใน installer M5-2)
+
 ## 6. Troubleshooting
 
 | อาการ | เช็ค |

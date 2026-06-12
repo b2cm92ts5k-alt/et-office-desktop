@@ -30,8 +30,14 @@ import urllib.request
 from ctypes import wintypes
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+# frozen = รันจาก exe ที่ PyInstaller แพ็ค (M5-3) — ทุกอย่างอยู่ข้างตัว launcher
+FROZEN = bool(getattr(sys, "frozen", False))
+EXE_DIR = Path(sys.executable).resolve().parent
+REPO = EXE_DIR if FROZEN else Path(__file__).resolve().parent.parent
 VENV_PY = REPO / ".venv" / "Scripts" / "python.exe"
+DAEMON_EXE = EXE_DIR / "et-office-daemon.exe"
+SIDEBAR_EXE = EXE_DIR / "et-office-sidebar.exe"
+WALLPAPER_EXE = EXE_DIR / "et-office-wallpaper.exe"   # Godot export (M5-4)
 # 127.0.0.1 ตรง ๆ — "localhost" ลอง ::1 ก่อนเสียเวลา ~2 วิ และ /health เอง
 # ใช้อีก ~2 วิ (ping Ollama ทุกครั้ง) timeout จึงต้องเผื่อถึง 5 วิ
 DAEMON_HEALTH = "http://127.0.0.1:8797/health"
@@ -111,10 +117,11 @@ class Launcher:
             log("daemon รันอยู่แล้ว (port 8797) — ใช้ตัวเดิม ไม่ปิดให้ตอนจบ")
             return True
         log("เปิด daemon (port 8797)...")
+        cmd = ([str(DAEMON_EXE)] if FROZEN
+               else [str(VENV_PY), "-m", "uvicorn", "daemon.main:app", "--port", "8797"])
         # process group แยก → ส่ง CTRL_BREAK ปิด uvicorn นุ่มนวลได้โดยไม่โดน console เรา
         self.daemon = subprocess.Popen(
-            [str(VENV_PY), "-m", "uvicorn", "daemon.main:app", "--port", "8797"],
-            cwd=REPO, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            cmd, cwd=REPO, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         self.daemon_owned = True
         if not wait_daemon():
             log("daemon ไม่ตอบ /health ภายใน 30 วิ — ดู log ด้านบน (Ollama รันหรือยัง?)")
@@ -123,12 +130,19 @@ class Launcher:
         return True
 
     def start_godot(self) -> bool:
-        godot = find_godot()
-        if godot is None:
-            log("ไม่พบ Godot — ติดตั้ง: winget install GodotEngine.GodotEngine "
-                "หรือตั้ง env GODOT_PATH ชี้ไปที่ exe")
-            return False
-        cmd = [str(godot), "--path", str(REPO / "godot")]
+        if FROZEN:
+            # ตัว export standalone (M5-4) วางข้าง launcher — ไม่ต้องมี Godot บนเครื่อง
+            if not WALLPAPER_EXE.is_file():
+                log("ข้าม Godot — ยังไม่มี et-office-wallpaper.exe ข้าง launcher (M5-4)")
+                return True
+            cmd = [str(WALLPAPER_EXE)]
+        else:
+            godot = find_godot()
+            if godot is None:
+                log("ไม่พบ Godot — ติดตั้ง: winget install GodotEngine.GodotEngine "
+                    "หรือตั้ง env GODOT_PATH ชี้ไปที่ exe")
+                return False
+            cmd = [str(godot), "--path", str(REPO / "godot")]
         if not self.args.window:
             cmd += ["--", "--wallpaper"]
         log(f"เปิด Godot ({'window' if self.args.window else 'wallpaper'} mode)...")
@@ -137,8 +151,9 @@ class Launcher:
 
     def start_sidebar(self) -> bool:
         log("เปิด sidebar + terminal...")
-        self.sidebar = subprocess.Popen([str(VENV_PY), str(REPO / "sidebar" / "host.py")],
-                                        cwd=REPO)
+        cmd = ([str(SIDEBAR_EXE)] if FROZEN
+               else [str(VENV_PY), str(REPO / "sidebar" / "host.py")])
+        self.sidebar = subprocess.Popen(cmd, cwd=REPO)
         return True
 
     # --- supervise --------------------------------------------------------
@@ -186,7 +201,7 @@ class Launcher:
 
     # --- main -------------------------------------------------------------
     def run(self) -> int:
-        if not VENV_PY.is_file():
+        if not FROZEN and not VENV_PY.is_file():
             log(".venv ไม่พบ — ดู Quick Start ใน README.md")
             return 1
         if not self.start_daemon():
