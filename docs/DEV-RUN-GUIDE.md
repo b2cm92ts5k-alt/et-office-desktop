@@ -9,6 +9,14 @@
 cd "D:\Project\ETLOLZ\Project in content\ET office desktop wallpaper\et-office-desktop"
 ```
 
+💡 **ทางลัดไม่ต้องพิมพ์เลย — ดับเบิลคลิกไฟล์ใน root repo:**
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `et-office.cmd` | เปิด daemon (port 8797) |
+| `dev-godot.cmd` | เปิด Godot โหมด window — ส่ง arg ได้ เช่น `dev-godot.cmd --wallpaper` |
+| `dev-sidebar.cmd` | เปิด sidebar (daemon ต้องรันก่อน) |
+
 ## 0. ของที่ต้องมี
 
 | ตัว | ที่อยู่ / คำสั่งเช็ค |
