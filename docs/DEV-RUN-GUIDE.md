@@ -1,6 +1,13 @@
 # ET Office — คู่มือรันเพื่อตรวจสอบ & ถ่ายทำระหว่างพัฒนา
 
-> สำหรับ dev/QA/ถ่ายทำ ก่อนที่ launcher จริง (M5-1) จะเสร็จ — ทุกคำสั่งรันจาก root ของ repo
+> สำหรับ dev/QA/ถ่ายทำ ก่อนที่ launcher จริง (M5-1) จะเสร็จ
+
+⚠️ **ทุกคำสั่งเป็น PowerShell (ห้ามใช้ Command Prompt/cmd — syntax `&` กับ `$ตัวแปร` ใช้กันคนละแบบ)
+และต้อง `cd` มาที่ root ของ repo ก่อนเสมอ** — เปิด PowerShell แล้วเริ่มด้วย:
+
+```powershell
+cd "D:\Project\ETLOLZ\Project in content\ET office desktop wallpaper\et-office-desktop"
+```
 
 ## 0. ของที่ต้องมี
 
