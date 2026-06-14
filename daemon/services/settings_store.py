@@ -17,6 +17,7 @@ DEFAULTS: dict = {
     "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
     "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว
     "onboarded": False,              # ผ่าน onboarding สร้าง CEO แล้วหรือยัง (M8)
+    "github_login": "",              # username ที่ผูก GitHub token ไว้ (M9-3) — token เก็บใน .env
 }
 
 

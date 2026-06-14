@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from ..adapters.llm_adapter import ENV_KEY_MAP
 from ..models.schemas import ApiKeyRequest, SocialSettings, WorkspaceSettings
@@ -46,6 +47,48 @@ def get_social_settings() -> dict:
 def update_social_settings(payload: SocialSettings) -> dict:
     """มีผลรอบ loop ถัดไปทันที ไม่ต้อง restart daemon"""
     return settings_store.update(payload.model_dump(exclude_none=True))
+
+
+class GithubTokenRequest(BaseModel):
+    token: str
+
+
+def _verify_github_token(token: str) -> str:
+    """เรียก GitHub /user ด้วย token → คืน login ถ้าใช้ได้ ไม่งั้น raise"""
+    import json as _json
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.github.com/user",
+        headers={"Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json",
+                 "User-Agent": "ET-Office/0.1"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return _json.loads(r.read().decode()).get("login", "")
+
+
+@router.post("/settings/github")
+def set_github(payload: GithubTokenRequest) -> dict:
+    """เก็บ GitHub token (M9-3) — validate กับ GitHub ก่อน แล้วเก็บลง .env เท่านั้น
+    token = สิทธิ์เขียน repo จริง → ใช้ fine-grained scope แคบ (Contents/Issues)"""
+    token = payload.token.strip()
+    if not token:
+        raise HTTPException(400, "ใส่ token ก่อน")
+    try:
+        login = _verify_github_token(token)
+    except Exception:
+        raise HTTPException(400, "token ใช้ไม่ได้ — เช็ค scope/วันหมดอายุ")
+    _write_env_value("GITHUB_TOKEN", token)
+    os.environ["GITHUB_TOKEN"] = token   # ให้ subprocess (gh) ใน ToolExecutor ใช้ได้ทันที
+    settings_store.update({"github_login": login})
+    return {"set": True, "login": login}
+
+
+@router.get("/settings/github")
+def github_status() -> dict:
+    """บอกแค่ว่าผูก token แล้วหรือยัง + login — ไม่เปิดเผย token"""
+    return {"set": bool(os.environ.get("GITHUB_TOKEN")),
+            "login": str(settings_store.get("github_login") or "")}
 
 
 @router.get("/settings/onboarding")

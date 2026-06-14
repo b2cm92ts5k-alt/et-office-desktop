@@ -86,6 +86,14 @@
       </div>
       <div id="key-status" class="set-row"></div>
 
+      <h3>GITHUB — เชื่อม repo ให้ทีม (M9)</h3>
+      <div class="set-row key-row">
+        <input id="gh-token" type="password" placeholder="วาง GitHub token…" autocomplete="off">
+        <button class="neon-btn" onclick="saveGithub()">SAVE</button>
+      </div>
+      <div id="gh-status" class="set-row"></div>
+      <div class="warn-note">ใช้ fine-grained token สิทธิ์เฉพาะ repo ที่ต้องการ (Contents + Issues) — token = สิทธิ์เขียน repo จริง เก็บใน .env เครื่องนี้เท่านั้น</div>
+
       <h3>LOCAL MODELS — ติดตั้งเพิ่ม (M7)</h3>
       <div id="model-install-banner" class="model-banner hidden">
         <span id="mib-text"></span>

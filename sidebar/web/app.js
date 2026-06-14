@@ -385,6 +385,7 @@ async function loadSettings() {
       `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
     keyStatus = await (await fetch(BASE + "/settings/apikey")).json();
     renderKeyStatus();
+    renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
     document.getElementById("soc-chance").value = soc.social_chance;
@@ -643,6 +644,40 @@ async function saveKey() {
     feedLine("done", `บันทึก ${provider} key แล้ว (เก็บใน .env เครื่องนี้เท่านั้น)`);
   } else {
     feedLine("error", `บันทึก key ไม่สำเร็จ (${res.status})`);
+  }
+}
+
+/* ---------- github (M9-3) ---------- */
+
+function renderGithubStatus(g) {
+  const el = document.getElementById("gh-status");
+  el.innerHTML = (g && g.set)
+    ? `<span class="key-chip on">✓ เชื่อมแล้ว: ${esc(g.login || "?")}</span>`
+    : `<span class="key-chip">ยังไม่ได้เชื่อม GitHub</span>`;
+}
+
+async function saveGithub() {
+  const input = document.getElementById("gh-token");
+  const token = input.value.trim();
+  if (!token) return;
+  document.getElementById("gh-status").textContent = "กำลังตรวจสอบ token…";
+  try {
+    const res = await fetch(BASE + "/settings/github", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      input.value = "";
+      renderGithubStatus(data);
+      feedLine("done", `เชื่อม GitHub แล้ว: ${esc(data.login)} (token เก็บใน .env เครื่องนี้)`);
+    } else {
+      document.getElementById("gh-status").textContent = `✗ ${data.detail || "เชื่อมไม่สำเร็จ"}`;
+      feedLine("error", esc(data.detail || "เชื่อม GitHub ไม่สำเร็จ"));
+    }
+  } catch {
+    feedLine("error", "ติดต่อ daemon ไม่ได้");
   }
 }
 
