@@ -651,9 +651,37 @@ async function saveKey() {
 
 function renderGithubStatus(g) {
   const el = document.getElementById("gh-status");
-  el.innerHTML = (g && g.set)
-    ? `<span class="key-chip on">✓ เชื่อมแล้ว: ${esc(g.login || "?")}</span>`
-    : `<span class="key-chip">ยังไม่ได้เชื่อม GitHub</span>`;
+  if (g && g.repo) document.getElementById("gh-repo").value = g.repo;
+  const acct = (g && g.set)
+    ? `<span class="key-chip on">✓ ${esc(g.login || "?")}</span>`
+    : `<span class="key-chip">ยังไม่ได้เชื่อม token</span>`;
+  const repo = (g && g.repo)
+    ? `<span class="key-chip on">📦 ${esc(g.repo)}</span>`
+    : `<span class="key-chip">ยังไม่ได้ตั้ง repo</span>`;
+  el.innerHTML = acct + " " + repo;
+}
+
+async function saveGithubRepo() {
+  const repo = document.getElementById("gh-repo").value.trim();
+  if (!repo) return;
+  document.getElementById("gh-status").textContent = "กำลังตรวจสอบ repo…";
+  try {
+    const res = await fetch(BASE + "/settings/github-repo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
+      feedLine("done", `ตั้ง GitHub repo: ${esc(data.repo)}`);
+    } else {
+      document.getElementById("gh-status").textContent = `✗ ${data.detail || "ตั้ง repo ไม่สำเร็จ"}`;
+      feedLine("error", esc(data.detail || "ตั้ง repo ไม่สำเร็จ"));
+    }
+  } catch {
+    feedLine("error", "ติดต่อ daemon ไม่ได้");
+  }
 }
 
 async function saveGithub() {
@@ -670,7 +698,7 @@ async function saveGithub() {
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       input.value = "";
-      renderGithubStatus(data);
+      renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
       feedLine("done", `เชื่อม GitHub แล้ว: ${esc(data.login)} (token เก็บใน .env เครื่องนี้)`);
     } else {
       document.getElementById("gh-status").textContent = `✗ ${data.detail || "เชื่อมไม่สำเร็จ"}`;

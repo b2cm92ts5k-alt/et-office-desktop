@@ -8,11 +8,16 @@
 """
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 from .settings_store import settings_store
+
+GH_API = "https://api.github.com"
 
 READ_CAP = 30_000        # ตัวอักษรสูงสุดที่อ่านไฟล์/เว็บ/ผลคำสั่งคืนให้ LLM
 PS_TIMEOUT_SEC = 60
@@ -29,6 +34,11 @@ TOOLS_SPEC = {
     "delete":     {"args": ["path"],            "desc": "ลบไฟล์ (โฟลเดอร์ต้องว่างถึงลบได้)"},
     "powershell": {"args": ["command"],         "desc": "รันคำสั่ง PowerShell ใน workspace"},
     "fetch_url":  {"args": ["url"],             "desc": "ดึงเนื้อหาจากเว็บ (GET, text เท่านั้น)"},
+    # GitHub (M9-4) — ต้องเชื่อม token + ตั้ง repo ใน Settings ก่อน, ทุก action ผ่าน permission gate
+    "gh_list_issues":   {"args": ["state"],            "desc": "ดู issue/Task ใน GitHub repo (state: open/closed/all)"},
+    "gh_create_issue":  {"args": ["title", "body"],    "desc": "สร้าง issue/Task ใหม่ใน GitHub repo"},
+    "gh_comment_issue": {"args": ["number", "body"],   "desc": "คอมเมนต์/อัปเดต issue ตามเลข"},
+    "gh_close_issue":   {"args": ["number"],           "desc": "ปิด issue ตามเลข"},
 }
 
 
@@ -58,8 +68,65 @@ def _clip(text: str, cap: int = READ_CAP) -> str:
     return text if len(text) <= cap else text[:cap] + f"\n…(ตัดที่ {cap} ตัวอักษร)"
 
 
+def _gh_repo() -> str:
+    repo = str(settings_store.get("github_repo") or "").strip()
+    if not repo:
+        raise WorkspaceError("ยังไม่ได้ตั้ง GitHub repo ใน Settings")
+    return repo
+
+
+def _gh_request(method: str, path: str, body: dict | None = None):
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise WorkspaceError("ยังไม่ได้เชื่อม GitHub (ตั้ง token ใน Settings)")
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        GH_API + path, data=data, method=method,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                 "User-Agent": "ET-Office/0.1", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode() or "{}")
+
+
+def _execute_github(tool: str, args: dict) -> str:
+    """GitHub tools (M9-4) — ไม่ต้องใช้ workspace, คุมด้วย permission gate"""
+    repo = _gh_repo()
+    try:
+        if tool == "gh_list_issues":
+            state = str(args.get("state", "open") or "open")
+            issues = _gh_request("GET", f"/repos/{repo}/issues?state={state}&per_page=20")
+            rows = [f"#{i['number']} [{i['state']}] {i['title']}"
+                    for i in issues if "pull_request" not in i]
+            return "\n".join(rows) or "(ไม่มี issue)"
+        if tool == "gh_create_issue":
+            title = str(args.get("title", "")).strip()
+            if not title:
+                return "ต้องมี title"
+            r = _gh_request("POST", f"/repos/{repo}/issues",
+                            {"title": title, "body": str(args.get("body", ""))})
+            return f"สร้าง issue #{r['number']} แล้ว: {r.get('html_url', '')}"
+        if tool == "gh_comment_issue":
+            num = args.get("number")
+            _gh_request("POST", f"/repos/{repo}/issues/{num}/comments",
+                        {"body": str(args.get("body", ""))})
+            return f"คอมเมนต์ที่ issue #{num} แล้ว"
+        if tool == "gh_close_issue":
+            num = args.get("number")
+            _gh_request("PATCH", f"/repos/{repo}/issues/{num}", {"state": "closed"})
+            return f"ปิด issue #{num} แล้ว"
+        return f"ไม่รู้จัก github tool: {tool}"
+    except WorkspaceError:
+        raise
+    except urllib.error.HTTPError as e:
+        return f"GitHub error {e.code}: {_clip(e.read().decode(errors='replace'), 300)}"
+    except Exception as exc:  # noqa: BLE001
+        return f"github tool ล้มเหลว: {exc}"
+
+
 def execute(tool: str, args: dict) -> str:
     """รัน tool หนึ่งครั้ง — เรียกหลังผ่าน permission gate แล้วเท่านั้น"""
+    if tool.startswith("gh_"):
+        return _execute_github(tool, args)   # GitHub ไม่ผูกกับ workspace
     root = workspace_root()
     try:
         if tool == "list_dir":
@@ -149,6 +216,14 @@ def summarize(tool: str, args: dict) -> str:
         return f"ย้าย {args.get('src')} → {args.get('dst')}"
     if tool == "fetch_url":
         return f"เปิดเว็บ {args.get('url')}"
+    if tool == "gh_create_issue":
+        return f"สร้าง GitHub issue: {args.get('title')}"
+    if tool == "gh_comment_issue":
+        return f"คอมเมนต์ GitHub issue #{args.get('number')}"
+    if tool == "gh_close_issue":
+        return f"ปิด GitHub issue #{args.get('number')}"
+    if tool == "gh_list_issues":
+        return f"ดู GitHub issues ({args.get('state', 'open')})"
     main_arg = args.get("path", args.get("url", ""))
     labels = {"list_dir": "ดูโฟลเดอร์", "read_file": "อ่านไฟล์",
               "mkdir": "สร้างโฟลเดอร์", "delete": "ลบ"}

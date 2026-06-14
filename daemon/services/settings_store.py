@@ -18,6 +18,7 @@ DEFAULTS: dict = {
     "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว
     "onboarded": False,              # ผ่าน onboarding สร้าง CEO แล้วหรือยัง (M8)
     "github_login": "",              # username ที่ผูก GitHub token ไว้ (M9-3) — token เก็บใน .env
+    "github_repo": "",               # repo เป้าหมายของทีม "owner/name" (M9-4)
 }
 
 

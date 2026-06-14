@@ -86,9 +86,38 @@ def set_github(payload: GithubTokenRequest) -> dict:
 
 @router.get("/settings/github")
 def github_status() -> dict:
-    """บอกแค่ว่าผูก token แล้วหรือยัง + login — ไม่เปิดเผย token"""
+    """บอกแค่ว่าผูก token แล้วหรือยัง + login + repo — ไม่เปิดเผย token"""
     return {"set": bool(os.environ.get("GITHUB_TOKEN")),
-            "login": str(settings_store.get("github_login") or "")}
+            "login": str(settings_store.get("github_login") or ""),
+            "repo": str(settings_store.get("github_repo") or "")}
+
+
+class GithubRepoRequest(BaseModel):
+    repo: str
+
+
+@router.post("/settings/github-repo")
+def set_github_repo(payload: GithubRepoRequest) -> dict:
+    """ตั้ง repo เป้าหมาย "owner/name" (M9-4) — validate ว่าเข้าถึงได้ด้วย token ปัจจุบัน"""
+    repo = payload.repo.strip().strip("/")
+    if repo.count("/") != 1:
+        raise HTTPException(400, "รูปแบบ repo ต้องเป็น owner/name")
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise HTTPException(400, "เชื่อม GitHub token ก่อน")
+    import json as _json
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                     "User-Agent": "ET-Office/0.1"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            full = _json.loads(r.read().decode()).get("full_name", repo)
+    except Exception:
+        raise HTTPException(400, f"เข้าถึง repo ไม่ได้: {repo} (เช็คชื่อ/สิทธิ์ token)")
+    settings_store.update({"github_repo": full})
+    return {"repo": full}
 
 
 @router.get("/settings/onboarding")

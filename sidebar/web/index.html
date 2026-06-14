@@ -79,6 +79,10 @@
         <input id="gh-token" type="password" placeholder="วาง GitHub token…" autocomplete="off">
         <button class="neon-btn" onclick="saveGithub()">SAVE</button>
       </div>
+      <div class="set-row key-row">
+        <input id="gh-repo" type="text" placeholder="repo เป้าหมาย เช่น owner/et-office-desktop" autocomplete="off">
+        <button class="neon-btn" onclick="saveGithubRepo()">SAVE</button>
+      </div>
       <div id="gh-status" class="set-row"></div>
       <div class="warn-note">ใช้ fine-grained token สิทธิ์เฉพาะ repo ที่ต้องการ (Contents + Issues) — token = สิทธิ์เขียน repo จริง เก็บใน .env เครื่องนี้เท่านั้น</div>
 
