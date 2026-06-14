@@ -8,6 +8,7 @@ uninstall (M7-4) จะมาเพิ่มใน route นี้
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 
 from fastapi import APIRouter, HTTPException
@@ -15,6 +16,8 @@ from pydantic import BaseModel
 
 from ..adapters import model_catalog
 from ..adapters.llm_adapter import (
+    DEFAULT_CLOUD_MODELS,
+    ENV_KEY_MAP,
     VRAMDetector,
     ollama_delete,
     ollama_list_installed,
@@ -51,6 +54,29 @@ def catalog() -> dict:
         "installing": _installing_tag,            # tag ที่กำลังลง (None = ว่าง) — UI disable ปุ่ม + resume progress
         "models": models,
     }
+
+
+@router.get("/available")
+def available() -> dict:
+    """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): qwen3 base เสมอ + local ที่ลง + cloud ที่มี key
+    ใช้ร่วมกันทั้ง HIRE dialog, gear ของ agent, และ CEO onboarding (M8)
+    """
+    base = _detector.detect()["recommended"]
+    local = ollama_list_installed() or [base]  # ออฟไลน์/ยังไม่ pull → fallback base
+    opts: list[dict] = []
+    for tag in local:
+        is_base = tag == base
+        opts.append({
+            "provider": "ollama",
+            "model": tag,
+            "label": f"{tag} (local)" + (" • default" if is_base else ""),
+            "recommended": is_base,
+        })
+    for prov, env in ENV_KEY_MAP.items():
+        if os.environ.get(env):  # มี API key เท่านั้นถึงโผล่ให้เลือก
+            m = DEFAULT_CLOUD_MODELS[prov]
+            opts.append({"provider": prov, "model": m, "label": f"☁ {prov} ({m})", "recommended": False})
+    return {"options": opts, "recommended_base": base}
 
 
 @router.post("/install")
@@ -117,7 +143,8 @@ def _pull_worker(loop: asyncio.AbstractEventLoop, tag: str) -> None:
         for p in ollama_pull_stream(tag):
             status = p.get("status", "")
             total, completed = p.get("total"), p.get("completed")
-            pct = int(completed / total * 100) if total else None
+            # บาง progress line มี total แต่ยังไม่มี completed (หรือกลับกัน) — กัน None/int
+            pct = int(completed / total * 100) if (total and completed is not None) else None
             # broadcast เมื่อ status เปลี่ยน หรือ % ขยับทุก 5 ก้าว (กัน spam WS/journal)
             if pct is not None:
                 bucket = pct // 5

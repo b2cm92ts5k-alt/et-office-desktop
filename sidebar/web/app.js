@@ -66,7 +66,13 @@ function setPill(agentId, status) {
 
 /* ---------- hire modal (M4-4) ---------- */
 
-function openHire() { document.getElementById("hire-backdrop").classList.remove("hidden"); }
+async function openHire() {
+  document.getElementById("hire-backdrop").classList.remove("hidden");
+  const opts = await loadAvailableModels(true);
+  const base = opts.find(o => o.recommended) || opts[0];
+  fillModelSelect(document.getElementById("h-model"), opts,
+    base ? { provider: base.provider, model: base.model } : null);
+}
 function closeHire(ev) {
   if (ev && ev.target.id !== "hire-backdrop") return; // คลิกในกล่องไม่ปิด
   document.getElementById("hire-backdrop").classList.add("hidden");
@@ -98,6 +104,8 @@ async function hireAgent() {
     system_prompt: mdText ? hireRolePrompt : "",
     sprite: hireSprite,
   };
+  const msel = document.getElementById("h-model");
+  if (msel && msel.value) payload.llm = parseModelVal(msel.value);
   const res = await fetch(BASE + "/agents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -379,9 +387,132 @@ async function loadSettings() {
     const ws = await (await fetch(BASE + "/settings/workspace")).json();
     document.getElementById("ws-path").value = ws.path;
     renderWsStatus(ws);
+    loadModelCatalog();
   } catch {
     feedLine("error", "โหลด settings ไม่ได้");
   }
+}
+
+/* ---------- local model manager (M7-5) ---------- */
+
+let modelCatalogData = null;
+let pendingInstall = null;    // tag ที่รอ user ยืนยันก่อนติดตั้ง (consent inline — เลี่ยง window.confirm ที่ WebView2 มีปัญหา)
+let pendingUninstall = null;
+
+const MC_CAT = { coder: "💻 Coder", general: "💬 ทั่วไป", math: "🔢 Math", vision: "👁 Vision", multimodal: "🎬 Multimodal" };
+const MC_ORDER = ["coder", "general", "math", "vision", "multimodal"];
+
+async function loadModelCatalog() {
+  try {
+    modelCatalogData = await (await fetch(BASE + "/models/catalog")).json();
+    renderModelCatalog();
+  } catch {
+    document.getElementById("model-catalog").innerHTML =
+      '<div class="empty-note">โหลดรายชื่อ model ไม่ได้ — Ollama รันอยู่ไหม?</div>';
+  }
+}
+
+function renderModelCatalog() {
+  const data = modelCatalogData;
+  if (!data) return;
+  const installing = data.installing;
+  const hasApp = data.models.some(m => m.app_installed);
+  updateInstallBanner(installing, null, installing ? "กำลังติดตั้ง…" : null);
+  const byCat = {};
+  for (const m of data.models) (byCat[m.category] = byCat[m.category] || []).push(m);
+  let html = "";
+  for (const cat of MC_ORDER) {
+    if (!byCat[cat]) continue;
+    html += `<div class="mc-cat">${MC_CAT[cat] || cat}</div>`;
+    for (const m of byCat[cat]) html += modelRow(m, installing, hasApp);
+  }
+  document.getElementById("model-catalog").innerHTML = html;
+}
+
+function modelRow(m, installing, hasApp) {
+  const rec = m.recommended ? '<span class="rec-badge">แนะนำ</span>' : "";
+  const meta = `<span class="mc-meta">${m.size_gb}GB · ต้อง ${m.min_vram_gb}GB</span>`;
+  let action;
+  if (m.tag === installing) {
+    action = '<span class="mc-state">กำลังลง…</span>';
+  } else if (m.app_installed) {
+    action = pendingUninstall === m.tag
+      ? `<span class="mc-confirm">ลบ? <button class="neon-btn sm danger" onclick="doUninstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelUninstall()">ไม่</button></span>`
+      : `<button class="neon-btn sm danger" onclick="askUninstall('${m.tag}')">ลบ</button>`;
+  } else if (m.installed) {
+    action = '<span class="mc-state ok">มีอยู่แล้ว</span>';
+  } else if (m.locked) {
+    action = '<span class="mc-state lock">VRAM ไม่พอ</span>';
+  } else if (installing) {
+    action = '<button class="neon-btn sm" disabled>รอคิว</button>';
+  } else if (hasApp) {
+    action = '<button class="neon-btn sm" disabled title="ลงได้ครั้งละ 1 ตัว — ลบตัวเดิมก่อน">ติดตั้ง</button>';
+  } else if (pendingInstall === m.tag) {
+    action = `<span class="mc-confirm">ลง ~${m.size_gb}GB? <button class="neon-btn sm" onclick="doInstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelInstall()">ไม่</button></span>`;
+  } else {
+    action = `<button class="neon-btn sm" onclick="askInstall('${m.tag}')">ติดตั้ง</button>`;
+  }
+  return `<div class="mc-row ${m.locked ? "locked" : ""}">` +
+    `<div class="mc-info"><div class="mc-name">${esc(m.name)} ${rec}</div>` +
+    `<div class="mc-desc">${esc(m.desc)}</div>${meta}</div>` +
+    `<div class="mc-action">${action}</div></div>`;
+}
+
+function askInstall(tag) { pendingInstall = tag; pendingUninstall = null; renderModelCatalog(); }
+function cancelInstall() { pendingInstall = null; renderModelCatalog(); }
+function askUninstall(tag) { pendingUninstall = tag; pendingInstall = null; renderModelCatalog(); }
+function cancelUninstall() { pendingUninstall = null; renderModelCatalog(); }
+
+async function doInstall(tag) {
+  pendingInstall = null;
+  try {
+    const res = await fetch(BASE + "/models/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+    });
+    if (res.ok) {
+      feedLine("route", `⬇ เริ่มติดตั้ง ${esc(tag)}…`);
+      if (modelCatalogData) modelCatalogData.installing = tag;
+      updateInstallBanner(tag, 0, "เริ่ม…");
+      renderModelCatalog();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      feedLine("error", esc(e.detail || "ติดตั้งไม่สำเร็จ"));
+      renderModelCatalog();
+    }
+  } catch {
+    feedLine("error", "ติดต่อ daemon ไม่ได้");
+  }
+}
+
+async function doUninstall(tag) {
+  pendingUninstall = null;
+  try {
+    const res = await fetch(BASE + "/models/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+    });
+    if (res.ok) feedLine("done", `🗑 ลบ ${esc(tag)} แล้ว`);
+    else {
+      const e = await res.json().catch(() => ({}));
+      feedLine("error", esc(e.detail || "ลบไม่สำเร็จ"));
+    }
+    loadModelCatalog();
+  } catch {
+    feedLine("error", "ติดต่อ daemon ไม่ได้");
+  }
+}
+
+function updateInstallBanner(tag, percent, status) {
+  const b = document.getElementById("model-install-banner");
+  if (!b) return;
+  if (!tag) { b.classList.add("hidden"); return; }
+  b.classList.remove("hidden");
+  const pct = (percent != null) ? ` ${percent}%` : "";
+  document.getElementById("mib-text").textContent = `กำลังติดตั้ง ${tag} — ${status || ""}${pct}`;
+  if (percent != null) document.getElementById("mib-fill").style.width = percent + "%";
 }
 
 /* ---------- workspace (M6-6) ---------- */
@@ -525,22 +656,55 @@ async function setAtmosphere(mode) {
   }
 }
 
-/* ---------- model picker (M4-6) ---------- */
+/* ---------- available models (M7-6) — qwen3 base + local ที่ลง + cloud ที่มี key ---------- */
 
-const DEFAULT_MODELS = {
-  ollama: "qwen3:8b", claude: "claude-sonnet-4-6",
-  gemini: "gemini-2.0-flash", openai: "gpt-4o",
-};
+let availableModels = null;
+
+async function loadAvailableModels(force) {
+  if (availableModels && !force) return availableModels;
+  try {
+    availableModels = (await (await fetch(BASE + "/models/available")).json()).options || [];
+  } catch {
+    availableModels = [{ provider: "ollama", model: "qwen3:8b", label: "qwen3:8b (local)", recommended: true }];
+  }
+  return availableModels;
+}
+
+function fillModelSelect(sel, opts, current) {
+  sel.innerHTML = "";
+  let matched = false;
+  for (const o of opts) {
+    const op = document.createElement("option");
+    op.value = o.provider + "|" + o.model;
+    op.textContent = o.label;
+    if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
+    sel.appendChild(op);
+  }
+  if (current && current.model && !matched) {
+    // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่ key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
+    const op = document.createElement("option");
+    op.value = current.provider + "|" + current.model;
+    op.textContent = (current.provider !== "ollama" ? "☁ " : "") + current.provider + "/" + current.model + " (ปัจจุบัน)";
+    op.selected = true;
+    sel.appendChild(op);
+  }
+}
+
+function parseModelVal(v) {
+  const i = String(v).indexOf("|");
+  return { provider: v.slice(0, i), model: v.slice(i + 1) };
+}
+
+/* ---------- model picker (M4-6 / M7-6) ---------- */
+
 let pickerAgentId = null;
 
-function openModelPicker(agentId) {
+async function openModelPicker(agentId) {
   const a = agents[agentId];
   if (!a) return;
   pickerAgentId = agentId;
   document.getElementById("m-agent-name").textContent = a.name;
-  document.getElementById("m-provider").value = a.llm.provider;
-  document.getElementById("m-model").value = a.llm.model;
-  onProviderChange();
+  fillModelSelect(document.getElementById("m-model"), await loadAvailableModels(true), a.llm);
   document.getElementById("model-backdrop").classList.remove("hidden");
 }
 
@@ -550,24 +714,9 @@ function closeModelPicker(ev) {
   pickerAgentId = null;
 }
 
-function onProviderChange() {
-  const p = document.getElementById("m-provider").value;
-  document.getElementById("m-model").value = DEFAULT_MODELS[p] || "";
-  // เตือนถ้าเลือก cloud แต่ยังไม่ตั้ง key (status โหลดตอนเปิด settings — โหลดสดถ้ายังไม่มี)
-  const warn = document.getElementById("m-key-warn");
-  if (p === "ollama") { warn.classList.add("hidden"); return; }
-  const show = () => warn.classList.toggle("hidden", !!keyStatus[p]);
-  if (Object.keys(keyStatus).length === 0) {
-    fetch(BASE + "/settings/apikey").then(r => r.json()).then(s => { keyStatus = s; show(); });
-  } else { show(); }
-}
-
 async function saveModel() {
   if (!pickerAgentId) return;
-  const llm = {
-    provider: document.getElementById("m-provider").value,
-    model: document.getElementById("m-model").value.trim(),
-  };
+  const llm = parseModelVal(document.getElementById("m-model").value);
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -673,6 +822,22 @@ function handleEvent(ev) {
       break;
     case "permission.auto":
       feedLine("route", `⚙ ${esc(d.agent_name || "")}: ${esc(d.summary)} (อนุมัติยกชุด)`);
+      break;
+    case "model.install.progress":
+      updateInstallBanner(d.tag, d.percent ?? null, d.status || "");
+      break;
+    case "model.install.done":
+      updateInstallBanner(null);
+      feedLine("done", `✔ ติดตั้ง ${esc(d.tag)} เสร็จ — เลือกใช้ได้แล้วตอนสร้าง agent`);
+      if (settingsOpen) loadModelCatalog();
+      break;
+    case "model.install.error":
+      updateInstallBanner(null);
+      feedLine("error", `✘ ติดตั้ง ${esc(d.tag)} ล้มเหลว: ${esc(d.error || "")}`);
+      if (settingsOpen) loadModelCatalog();
+      break;
+    case "model.uninstall.done":
+      if (settingsOpen) loadModelCatalog();
       break;
     case "qa.ping":
       postQaReport();  // QA gate M4-11 ขอ snapshot สถานะ DOM

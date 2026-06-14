@@ -86,6 +86,13 @@
       </div>
       <div id="key-status" class="set-row"></div>
 
+      <h3>LOCAL MODELS — ติดตั้งเพิ่ม (M7)</h3>
+      <div id="model-install-banner" class="model-banner hidden">
+        <span id="mib-text"></span>
+        <div class="mib-bar"><div id="mib-fill" class="mib-fill"></div></div>
+      </div>
+      <div id="model-catalog" class="model-catalog"><div class="empty-note">…</div></div>
+
       <h3>SOCIAL LOOP</h3>
       <div class="set-row">
         <label class="inline"><input type="checkbox" id="soc-enabled"> เปิด agent คุยกันเอง</label>
@@ -125,6 +132,7 @@
     <label>Role <input id="h-role" placeholder="Content Writer"></label>
     <label>Keywords (คั่นด้วย ,) <input id="h-keywords" placeholder="เขียน, บทความ, สคริปต์"></label>
     <label>Avatar <input id="h-avatar" value="🤖" maxlength="4"></label>
+    <label>Model AI <select id="h-model"></select></label>
 
     <!-- Custom spritesheet (M6-2 v2) — 192x528 ครบทุกท่า หรือ 192x192 เดินอย่างเดียว -->
     <label>Spritesheet ตัวละคร — PNG 192×528 ตาม template (ไม่ใส่ = ตัว default)
@@ -177,16 +185,8 @@
 <div id="model-backdrop" class="hidden" onclick="closeModelPicker(event)">
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
-    <label>Provider
-      <select id="m-provider" onchange="onProviderChange()">
-        <option value="ollama">🤖 LOCAL — Ollama</option>
-        <option value="claude">☁ Claude</option>
-        <option value="gemini">☁ Gemini</option>
-        <option value="openai">☁ OpenAI</option>
-      </select>
-    </label>
-    <label>Model <input id="m-model" placeholder="qwen3:8b"></label>
-    <div id="m-key-warn" class="warn-note hidden">⚠ provider นี้ยังไม่ได้ตั้ง API key — ไปที่ SETTINGS ก่อน</div>
+    <label>Model AI <select id="m-model"></select></label>
+    <div class="warn-note">เพิ่ม model อื่นได้ที่ SETTINGS — Local Models (ลง local เพิ่ม) หรือ API Keys (cloud)</div>
     <div class="modal-actions">
       <button class="ghost" onclick="closeModelPicker()">ยกเลิก</button>
       <button class="neon-btn" onclick="saveModel()">SAVE</button>
