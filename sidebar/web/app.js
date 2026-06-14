@@ -402,6 +402,16 @@ let pendingUninstall = null;
 const MC_CAT = { coder: "💻 Coder", general: "💬 ทั่วไป", math: "🔢 Math", vision: "👁 Vision", multimodal: "🎬 Multimodal" };
 const MC_ORDER = ["coder", "general", "math", "vision", "multimodal"];
 
+function openModelsModal() {
+  document.getElementById("models-backdrop").classList.remove("hidden");
+  loadModelCatalog();
+}
+
+function closeModelsModal(ev) {
+  if (ev && ev.target.id !== "models-backdrop") return;
+  document.getElementById("models-backdrop").classList.add("hidden");
+}
+
 async function loadModelCatalog() {
   try {
     modelCatalogData = await (await fetch(BASE + "/models/catalog")).json();
@@ -410,6 +420,15 @@ async function loadModelCatalog() {
     document.getElementById("model-catalog").innerHTML =
       '<div class="empty-note">โหลดรายชื่อ model ไม่ได้ — Ollama รันอยู่ไหม?</div>';
   }
+}
+
+function renderModelMini() {
+  const mini = document.getElementById("model-mini-status");
+  if (!mini || !modelCatalogData) return;
+  const app = (modelCatalogData.models || []).find(m => m.app_installed);
+  mini.textContent = app
+    ? `✓ ติดตั้งผ่านแอป: ${app.tag}`
+    : "ยังไม่ได้ติดตั้งเพิ่ม — qwen3 (default) ใช้ได้เลย";
 }
 
 function renderModelCatalog() {
@@ -427,6 +446,7 @@ function renderModelCatalog() {
     for (const m of byCat[cat]) html += modelRow(m, installing, hasApp);
   }
   document.getElementById("model-catalog").innerHTML = html;
+  renderModelMini();
 }
 
 function modelRow(m, installing, hasApp) {

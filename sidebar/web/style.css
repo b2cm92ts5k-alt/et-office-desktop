@@ -64,8 +64,14 @@ body.collapsed #panel { display: none; }
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow-y: auto;            /* เนื้อหายาว → เลื่อนดูได้ทั้ง panel (header ปักไว้ด้านบน) */
+  overflow-x: hidden;
   animation: slide-in .18s ease-out;
 }
+/* scrollbar บาง ๆ เข้าธีม */
+#panel::-webkit-scrollbar { width: 8px; }
+#panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+#panel::-webkit-scrollbar-thumb:hover { background: var(--magenta); }
 @keyframes slide-in {
   from { transform: translateX(24px); opacity: 0; }
   to   { transform: none; opacity: 1; }
@@ -75,7 +81,9 @@ header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--panel2), transparent);
+  background: var(--panel);     /* solid — กันเนื้อหา scroll ลอดใต้ header */
+  position: sticky; top: 0; z-index: 5;
+  flex: 0 0 auto;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
 h1 {
@@ -460,3 +468,20 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
   height: 100%; width: 0%; background: var(--cyan);
   box-shadow: 0 0 8px var(--cyan); transition: width 0.3s ease;
 }
+.mc-mini { font-family: var(--font-thai); font-size: 11px; color: var(--sub); }
+
+/* local model catalog modal (M7-5 redesign) — แยกหน้าต่างกัน panel ล้น */
+#models-backdrop {
+  position: fixed; inset: 0; background: rgba(5, 3, 12, 0.8);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+#models-backdrop.hidden { display: none; }
+#models-modal {
+  background: var(--panel); border: 1px solid var(--magenta);
+  box-shadow: 0 0 24px rgba(224, 64, 251, 0.25);
+  padding: 16px; width: 90%; max-width: 320px; max-height: 82vh;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#models-modal h2 { font-family: var(--font-pixel); font-size: 10px; color: var(--cyan); }
+.models-sub { font-family: var(--font-thai); font-size: 11px; color: var(--sub); }
+#models-modal .model-catalog { overflow-y: auto; flex: 1; min-height: 0; margin-top: 0; }
