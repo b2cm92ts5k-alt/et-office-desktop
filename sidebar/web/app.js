@@ -369,7 +369,7 @@ async function loadSettings() {
   try {
     const vram = await (await fetch(BASE + "/system/vram")).json();
     document.getElementById("vram-info").textContent =
-      `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended.qwen}`;
+      `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
     keyStatus = await (await fetch(BASE + "/settings/apikey")).json();
     renderKeyStatus();
     const soc = await (await fetch(BASE + "/settings/social")).json();

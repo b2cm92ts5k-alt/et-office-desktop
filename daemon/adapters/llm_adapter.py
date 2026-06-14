@@ -50,23 +50,32 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
 
 
 class VRAMDetector:
-    """ตรวจ VRAM ผ่าน nvidia-smi → แนะนำ model ที่เหมาะ (M1-5)
-    หมายเหตุ: ใช้ tag ที่มีจริงบน Ollama (blueprint เขียน qwen3:7b/gemma4 ซึ่งไม่มีจริง)
+    """ตรวจ VRAM ผ่าน nvidia-smi → แนะนำ base model (qwen3) ตามสเปค (M1-5, ปรับ M7-1)
+
+    base = qwen3 ทั่วไปเท่านั้น (local-first). **ไม่ใช้ qwen3-coder เป็น base** เพราะ Ollama
+    มีเล็กสุด 30B (~19GB) เครื่องทั่วไปรันไม่ได้. Gemma + model เฉพาะทาง (coder/math/vl)
+    = ผู้ใช้ติดตั้งเพิ่มเองผ่าน Model Manager (M7) ไม่อยู่ใน auto-select.
+    tag ที่ใช้มีจริงบน Ollama แล้ว (verified มิ.ย.2026).
     """
 
+    # (lo, hi) VRAM GB → qwen3 tag (recommended เป็น string เดียว)
+    # boundary อิงขนาดที่รันได้จริง: 1.7b~1.4GB / 8b~5.2GB / 14b~9.3GB(ต้อง ~12GB) / 32b~20GB(ต้อง ~24GB)
+    # การ์ด 8GB → qwen3:8b (พอดี — ตัวที่ daemon รันผ่านจริง), ไม่ดัน 14b ที่ล้น VRAM
     MODEL_MAP = [
-        ((0, 4),    {"qwen": "qwen2.5:1.5b", "gemma": "gemma3:1b"}),
-        ((4, 8),    {"qwen": "qwen3:8b",     "gemma": "gemma3:4b"}),
-        ((8, 16),   {"qwen": "qwen3:8b",     "gemma": "gemma3:12b"}),
-        ((16, 999), {"qwen": "qwen3:32b",    "gemma": "gemma3:27b"}),
+        ((0, 6),    "qwen3:1.7b"),
+        ((6, 12),   "qwen3:8b"),
+        ((12, 24),  "qwen3:14b"),
+        ((24, 999), "qwen3:32b"),
     ]
 
     def detect(self) -> dict:
         vram_gb = self._read_vram_gb()
-        for (lo, hi), models in self.MODEL_MAP:
+        model = self.MODEL_MAP[-1][1]
+        for (lo, hi), tag in self.MODEL_MAP:
             if lo <= vram_gb < hi:
-                return {"vram_gb": round(vram_gb, 1), "recommended": models}
-        return {"vram_gb": round(vram_gb, 1), "recommended": self.MODEL_MAP[-1][1]}
+                model = tag
+                break
+        return {"vram_gb": round(vram_gb, 1), "recommended": model}
 
     def _read_vram_gb(self) -> float:
         try:

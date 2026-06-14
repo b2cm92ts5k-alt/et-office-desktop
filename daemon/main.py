@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 load_dotenv(Path(__file__).parent / ".env")  # โหลดก่อน import modules ที่อ่าน env
 
 from .database import init_db                              # noqa: E402
-from .routes import agents, events, logs, permissions, proposals, roles, settings, sprites, system, tasks  # noqa: E402
+from .routes import agents, events, logs, models, permissions, proposals, roles, settings, sprites, system, tasks  # noqa: E402
 from .services.permission_gate import permission_gate      # noqa: E402
 from .services.social_service import social_service        # noqa: E402
 from .services.ws_manager import ws_manager                # noqa: E402
@@ -49,6 +49,7 @@ app.add_middleware(
 )
 
 app.include_router(system.router)
+app.include_router(models.router)
 app.include_router(agents.router)
 app.include_router(tasks.router)
 app.include_router(roles.router)
