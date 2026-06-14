@@ -268,15 +268,18 @@ def main() -> None:
                         help="เปิด settings panel อัตโนมัติ (QA M4-6)")
     args = parser.parse_args()
 
-    params = {}
+    cache_bust = str(int(time.time()))  # กัน WebView2 cache หน้าเก่า — โหลดสดทุก launch
+    params = {"v": cache_bust}
     if args.qa_toggle:
         params["qa_toggle"] = "1"
     if args.qa_settings:
         params["qa_settings"] = "1"
-    url = DAEMON_URL + ("?" + urllib.parse.urlencode(params) if params else "")
+    url = DAEMON_URL + "?" + urllib.parse.urlencode(params)
     # qa_task ส่งให้หน้าต่าง terminal — input ย้ายไปอยู่ที่นั่นแล้ว (M6-4)
-    term_url = TERMINAL_URL + (
-        "?" + urllib.parse.urlencode({"qa_task": args.qa_task}) if args.qa_task else "")
+    term_params = {"v": cache_bust}
+    if args.qa_task:
+        term_params["qa_task"] = args.qa_task
+    term_url = TERMINAL_URL + "?" + urllib.parse.urlencode(term_params)
 
     sb = SidebarWindow()
     sb.window = webview.create_window(
