@@ -18,10 +18,18 @@
 
 <div id="feed"></div>
 
+<!-- ไฟล์ที่ลากใส่ (M9-2) — แนบเข้า context ของ task ถัดไป -->
+<div id="attached" class="attached hidden"></div>
+
+<!-- overlay ตอนลากไฟล์เข้ามา -->
+<div id="drop-hint">วางไฟล์ที่นี่เพื่อให้ทีมดู 📎</div>
+
 <form id="task-form" onsubmit="submitTask(); return false;">
+  <button type="button" class="neon-btn" id="attach-btn" onclick="pickFiles()" title="แนบไฟล์ให้ทีมดู">📎</button>
   <input id="task-input" type="text" placeholder="สั่งงานทีม… (Enter เพื่อส่ง)" autocomplete="off">
   <button type="submit" class="neon-btn">SEND</button>
 </form>
+<input id="file-input" type="file" multiple class="hidden" onchange="filesPicked(this)">
 
 <!-- มุมจับปรับขนาด — frameless window ไม่มีขอบ resize ของ OS -->
 <div id="grip" title="ลากเพื่อปรับขนาด">◢</div>

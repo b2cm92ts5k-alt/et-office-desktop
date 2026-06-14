@@ -12,6 +12,74 @@ const MIN_W = 300, MIN_H = 220;   // ต้องตรงกับ TERMINAL_MIN
 
 let agents = {};
 let ws = null;
+let attached = [];   // ไฟล์ที่ลากใส่ รอแนบ task ถัดไป (M9-2)
+
+/* ---------- drag & drop ไฟล์ (M9-2) ---------- */
+
+let dragDepth = 0;
+
+function initDrop() {
+  const hint = document.getElementById("drop-hint");
+  window.addEventListener("dragover", (e) => { e.preventDefault(); });
+  window.addEventListener("dragenter", (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    e.preventDefault();
+    dragDepth++;
+    hint.classList.add("on");
+  });
+  window.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    if (--dragDepth <= 0) { dragDepth = 0; hint.classList.remove("on"); }
+  });
+  window.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    hint.classList.remove("on");
+    const files = [...(e.dataTransfer?.files || [])];
+    for (const f of files) await uploadDropped(f);
+  });
+}
+
+function pickFiles() { document.getElementById("file-input").click(); }
+
+async function filesPicked(input) {
+  const files = [...(input.files || [])];
+  for (const f of files) await uploadDropped(f);
+  input.value = "";   // reset เผื่อเลือกไฟล์เดิมซ้ำ
+}
+
+async function uploadDropped(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  feedLine("ln", `📎 กำลังแนบ ${esc(file.name)}…`);
+  try {
+    const res = await fetch(BASE + "/files/drop", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      attached.push({ name: data.name, rel: data.rel });
+      renderAttached();
+      feedLine("done", `📎 แนบ ${esc(data.name)} แล้ว — พิมพ์สั่งทีมให้ดูไฟล์ได้เลย`);
+    } else {
+      feedLine("error", `แนบไม่ได้: ${esc(data.detail || "workspace ยังไม่ได้ตั้งใน Settings?")}`);
+    }
+  } catch {
+    feedLine("error", "แนบไฟล์ไม่ได้ — daemon เปิดอยู่ไหม?");
+  }
+}
+
+function renderAttached() {
+  const box = document.getElementById("attached");
+  if (!attached.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  box.classList.remove("hidden");
+  box.innerHTML = attached.map((a, i) =>
+    `<span class="att-chip">📎 ${esc(a.name)} <button onclick="removeAttached(${i})" title="เอาออก">✕</button></span>`
+  ).join("");
+}
+
+function removeAttached(i) {
+  attached.splice(i, 1);
+  renderAttached();
+}
 
 /* ---------- feed ---------- */
 
@@ -42,12 +110,19 @@ async function submitTask() {
   const msg = input.value.trim();
   if (!msg) return;
   input.value = "";
-  feedLine("user", `&gt; ${esc(msg)}`);
+  // แนบ path ไฟล์ที่ลากใส่เข้า context ให้ agent อ่านต่อ (อยู่ใน workspace แล้ว)
+  const note = attached.length
+    ? `[ไฟล์แนบใน workspace: ${attached.map(a => a.rel).join(", ")}]\n`
+    : "";
+  const sent = note + msg;
+  feedLine("user", `&gt; ${esc(msg)}` + (attached.length ? ` <span class="att-inline">📎${attached.length}</span>` : ""));
+  attached = [];
+  renderAttached();
   try {
     const res = await fetch(BASE + "/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg }),
+      body: JSON.stringify({ message: sent }),
     });
     const data = await res.json();
     const cfg = Object.values(agents).find(a => a.name === data.agent);
@@ -177,4 +252,5 @@ function trim(s, n) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
+initDrop();
 connectWs();

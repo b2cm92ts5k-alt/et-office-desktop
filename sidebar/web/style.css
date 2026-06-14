@@ -507,3 +507,23 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
 }
 .ceo-tag { font-size: 11px; }
 .agent-card.ceo { border-color: var(--gold); }
+
+/* terminal file drop (M9-2) */
+.attached { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px; }
+.attached.hidden { display: none; }
+.att-chip {
+  font-family: var(--font-thai); font-size: 11px; color: var(--cyan);
+  border: 1px solid var(--cyan); border-radius: 4px; padding: 2px 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.att-chip button { background: none; border: none; color: var(--sub); cursor: pointer; font-size: 11px; padding: 0; }
+.att-chip button:hover { color: var(--pink); }
+.att-inline { color: var(--cyan); font-size: 10px; }
+#drop-hint {
+  position: fixed; inset: 0; z-index: 80;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 229, 255, 0.10); border: 2px dashed var(--cyan);
+  font-family: var(--font-thai); font-size: 14px; color: var(--cyan);
+  pointer-events: none;
+}
+#drop-hint.on { display: flex; }
