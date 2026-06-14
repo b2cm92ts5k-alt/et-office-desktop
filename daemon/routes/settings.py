@@ -48,6 +48,19 @@ def update_social_settings(payload: SocialSettings) -> dict:
     return settings_store.update(payload.model_dump(exclude_none=True))
 
 
+@router.get("/settings/onboarding")
+def get_onboarding() -> dict:
+    """sidebar เช็คตอนเปิด — ยังไม่ onboarded → เด้ง wizard สร้าง CEO (M8)"""
+    return {"onboarded": bool(settings_store.get("onboarded"))}
+
+
+@router.post("/settings/onboarding")
+def complete_onboarding() -> dict:
+    """เรียกหลังสร้าง CEO สำเร็จ — กัน wizard เด้งซ้ำครั้งต่อไป"""
+    settings_store.update({"onboarded": True})
+    return {"onboarded": True}
+
+
 @router.get("/settings/workspace")
 def get_workspace() -> dict:
     path = str(settings_store.get("workspace_path") or "")

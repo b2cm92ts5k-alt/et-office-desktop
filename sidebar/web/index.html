@@ -154,6 +154,22 @@
   </div>
 </div>
 
+<!-- Onboarding modal (M8) — first run: สร้างตัวละคร CEO (ปิดเองไม่ได้ ต้องสร้างก่อน) -->
+<div id="onboard-backdrop" class="hidden">
+  <div id="onboard-modal">
+    <h2>ยินดีต้อนรับสู่ ET OFFICE</h2>
+    <p class="onboard-sub">สร้างตัวละครของคุณ (CEO) — ตัวแรกที่จะปรากฏในออฟฟิศ ใส่หน้าที่ + เลือก model AI ได้เหมือน agent</p>
+    <label>ชื่อ <input id="ceo-name" placeholder="ชื่อคุณ / ชื่อเล่น"></label>
+    <label>หน้าที่ / Role <input id="ceo-role" placeholder="เช่น CEO / Founder"></label>
+    <label>Avatar <input id="ceo-avatar" value="👑" maxlength="4"></label>
+    <label>Model AI <select id="ceo-model"></select></label>
+    <div id="ceo-status" class="role-status"></div>
+    <div class="modal-actions">
+      <button class="neon-btn" onclick="createCeo()">สร้าง &amp; เข้าออฟฟิศ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Local model catalog modal (M7-5 redesign) — แยกหน้าต่างกัน panel ล้น -->
 <div id="models-backdrop" class="hidden" onclick="closeModelsModal(event)">
   <div id="models-modal">

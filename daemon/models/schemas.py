@@ -34,6 +34,7 @@ class AgentConfig(BaseModel):
     system_prompt: str = ""
     backstory: str = ""
     sprite: str = ""                # custom spritesheet ใน data/sprites/ (M6-2 v2)
+    is_ceo: bool = False            # ตัวละคร CEO/ผู้ใช้ จาก onboarding (M8) — ไล่ออกไม่ได้
     llm: LLMConfig = LLMConfig()
     status: AgentStatus = "idle"
 
@@ -47,6 +48,7 @@ class AgentCreate(BaseModel):
     system_prompt: str = ""
     backstory: str = ""
     sprite: str = ""
+    is_ceo: bool = False
     llm: LLMConfig = LLMConfig()
 
 

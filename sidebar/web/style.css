@@ -485,3 +485,25 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
 #models-modal h2 { font-family: var(--font-pixel); font-size: 10px; color: var(--cyan); }
 .models-sub { font-family: var(--font-thai); font-size: 11px; color: var(--sub); }
 #models-modal .model-catalog { overflow-y: auto; flex: 1; min-height: 0; margin-top: 0; }
+
+/* onboarding / CEO (M8) */
+#onboard-backdrop {
+  position: fixed; inset: 0; background: rgba(5, 3, 12, 0.92);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+#onboard-backdrop.hidden { display: none; }
+#onboard-modal {
+  background: var(--panel); border: 1px solid var(--gold);
+  box-shadow: 0 0 28px rgba(255, 224, 64, 0.25);
+  padding: 18px; width: 90%; max-width: 300px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#onboard-modal h2 { font-family: var(--font-pixel); font-size: 11px; color: var(--gold); text-shadow: 0 0 8px #ffe04066; }
+.onboard-sub { font-family: var(--font-thai); font-size: 12px; color: var(--sub); }
+#onboard-modal label { display: flex; flex-direction: column; gap: 4px; font-family: var(--font-thai); font-size: 12px; color: var(--sub); }
+#onboard-modal input, #onboard-modal select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px; padding: 6px;
+}
+.ceo-tag { font-size: 11px; }
+.agent-card.ceo { border-color: var(--gold); }

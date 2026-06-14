@@ -16,6 +16,7 @@ DEFAULTS: dict = {
     "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
     "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
     "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว
+    "onboarded": False,              # ผ่าน onboarding สร้าง CEO แล้วหรือยัง (M8)
 }
 
 

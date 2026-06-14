@@ -44,13 +44,18 @@ function renderAgents() {
     card.className = "agent-card";
     card.style.setProperty("--ac", a.color);
     const cloud = a.llm.provider !== "ollama" ? "☁ " : "";
+    const crown = a.is_ceo ? '<span class="ceo-tag" title="CEO / ตัวคุณ">👑</span> ' : "";
+    // CEO ไล่ออกไม่ได้ (เป็นตัวผู้ใช้เอง) — ซ่อนปุ่ม fire
+    const fireBtn = a.is_ceo ? "" :
+      `<button class="ghost fire" title="ไล่ออก" onclick="openFire('${a.id}')">✖</button>`;
+    if (a.is_ceo) card.classList.add("ceo");
     card.innerHTML =
       `<span class="avatar">${esc(a.avatar)}</span>` +
-      `<span class="info"><div class="name">${esc(a.name)}</div>` +
+      `<span class="info"><div class="name">${crown}${esc(a.name)}</div>` +
       `<div class="role">${esc(a.role)} · ${cloud}${esc(a.llm.model)}</div></span>` +
       `<span class="pill" id="pill-${a.id}"></span>` +
       `<button class="ghost gear" title="เลือก model" onclick="openModelPicker('${a.id}')">⚙</button>` +
-      `<button class="ghost fire" title="ไล่ออก" onclick="openFire('${a.id}')">✖</button>`;
+      fireBtn;
     el.appendChild(card);
     setPill(a.id, a.status);
   }
@@ -715,6 +720,53 @@ function parseModelVal(v) {
   return { provider: v.slice(0, i), model: v.slice(i + 1) };
 }
 
+/* ---------- onboarding / CEO (M8) ---------- */
+
+async function checkOnboarding() {
+  try {
+    const o = await (await fetch(BASE + "/settings/onboarding")).json();
+    if (!o.onboarded) openOnboard();
+  } catch { /* daemon down — reconnect แล้วเช็คใหม่ */ }
+}
+
+async function openOnboard() {
+  const opts = await loadAvailableModels(true);
+  const base = opts.find(o => o.recommended) || opts[0];
+  fillModelSelect(document.getElementById("ceo-model"), opts,
+    base ? { provider: base.provider, model: base.model } : null);
+  document.getElementById("onboard-backdrop").classList.remove("hidden");
+}
+
+async function createCeo() {
+  const name = document.getElementById("ceo-name").value.trim();
+  const role = document.getElementById("ceo-role").value.trim();
+  const status = document.getElementById("ceo-status");
+  if (!name || !role) { status.textContent = "ใส่ชื่อและหน้าที่ก่อน"; return; }
+  const payload = {
+    name, role,
+    avatar: document.getElementById("ceo-avatar").value.trim() || "👑",
+    color: "#ffe040",   // gold = CEO
+    is_ceo: true,
+  };
+  const msel = document.getElementById("ceo-model");
+  if (msel && msel.value) payload.llm = parseModelVal(msel.value);
+  status.textContent = "กำลังสร้าง…";
+  try {
+    const res = await fetch(BASE + "/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) { status.textContent = `สร้างไม่สำเร็จ (${res.status})`; return; }
+    await fetch(BASE + "/settings/onboarding", { method: "POST" }).catch(() => {});
+    document.getElementById("onboard-backdrop").classList.add("hidden");
+    feedLine("done", `ยินดีต้อนรับ ${esc(name)}! 👑 เข้าออฟฟิศแล้ว`);
+    loadAgents();
+  } catch {
+    status.textContent = "ติดต่อ daemon ไม่ได้";
+  }
+}
+
 /* ---------- model picker (M4-6 / M7-6) ---------- */
 
 let pickerAgentId = null;
@@ -777,6 +829,7 @@ function connectWs() {
     loadProposals();
     loadPermissions(); // คำขอที่ค้างระหว่าง sidebar ปิดอยู่ (M6-8)
     if (!uiRestored) { uiRestored = true; restoreUiState(); }
+    checkOnboarding(); // first run → wizard สร้าง CEO (M8)
   };
   ws.onclose = () => {
     setDaemonDot(false);
