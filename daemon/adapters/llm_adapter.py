@@ -98,3 +98,67 @@ def ollama_ok() -> bool:
             return r.status == 200
     except Exception:
         return False
+
+
+def ollama_list_installed() -> list[str]:
+    """รายชื่อ model ที่ pull ไว้แล้ว (GET /api/tags) — ใช้เติม flag installed ใน catalog (M7-3)"""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=5) as r:
+            data = json.loads(r.read().decode())
+        return [m.get("name", "") for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def ollama_ps_running() -> list[str]:
+    """model ที่กำลัง load อยู่ใน VRAM ตอนนี้ (GET /api/ps) — ใช้กฎ 'ห้ามลงตอนมีตัวอื่นรัน' (M7-3)"""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/ps", timeout=5) as r:
+            data = json.loads(r.read().decode())
+        return [m.get("name", "") for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def ollama_pull_stream(tag: str):
+    """generator: stream progress ของ ollama pull (POST /api/pull) ทีละบรรทัด JSON
+    yield dict เช่น {"status":"pulling ...","total":N,"completed":M} จนจบ {"status":"success"}
+    """
+    import json
+    import urllib.request
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/pull",
+        data=json.dumps({"model": tag, "stream": True}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        for raw in r:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                yield json.loads(raw.decode())
+            except json.JSONDecodeError:
+                continue
+
+
+def ollama_delete(tag: str) -> bool:
+    """ลบ model (DELETE /api/delete) — ใช้ใน M7-4 uninstall"""
+    import json
+    import urllib.request
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/delete",
+        data=json.dumps({"model": tag}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status == 200
+    except Exception:
+        return False

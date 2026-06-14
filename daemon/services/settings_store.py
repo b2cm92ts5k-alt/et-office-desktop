@@ -15,6 +15,7 @@ DEFAULTS: dict = {
     "social_chance": 0.3,            # 30% ต่อรอบ
     "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
     "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
+    "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว
 }
 
 
