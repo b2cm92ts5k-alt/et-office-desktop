@@ -112,13 +112,15 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	var desk := DESK_SPOTS[index % DESK_SPOTS.size()]
 	_desk_of[id] = desk
 	sprite.place_at(desk)
-	_world.add_child(sprite)
-	_agents[id] = sprite
-	# จอ hologram ประจำโต๊ะ (M3-7) — ลอยเหนือ desk, อยู่กับที่แม้ agent เดินไปไหน
+	# จอ hologram ประจำโต๊ะ (M3-7) — position = cell เดียวกับ desk/agent (y-sort คีย์เท่ากัน)
+	# เพิ่ม "ก่อน" agent → agent วาดทับจอ (จอ overlay มอนิเตอร์ furniture, ไม่บังตัว/หัว agent)
+	# อยู่กับที่แม้ agent เดินไปไหน — agent ไม่อยู่โต๊ะ จอจะดับเอง
 	var screen := HologramScreen.new()
-	screen.position = Iso.grid_to_screen(desk) + Vector2(0, -44)
+	screen.position = Iso.grid_to_screen(desk)
 	_world.add_child(screen)
 	_screens[id] = screen
+	_world.add_child(sprite)
+	_agents[id] = sprite
 	# status เริ่มต้นจาก registry — เดินไป zone ที่ถูกต้องเลยถ้าไม่ใช่ที่ desk
 	_apply_status(id, str(cfg.get("status", "idle")))
 
