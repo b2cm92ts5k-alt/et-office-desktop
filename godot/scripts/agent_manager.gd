@@ -35,6 +35,7 @@ const ROLE_SPRITES := {
 }
 
 var _agents: Dictionary = {}      # agent_id -> AgentSprite
+var _screens: Dictionary = {}     # agent_id -> HologramScreen (จอ desk, M3-7)
 var _desk_of: Dictionary = {}     # agent_id -> Vector2i
 var _spot_of: Dictionary = {}     # agent_id -> Vector2i spot ที่จองใน zone
 var _spot_owner: Dictionary = {}  # Vector2i -> agent_id (กันยืนซ้อน)
@@ -113,6 +114,11 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	sprite.place_at(desk)
 	_world.add_child(sprite)
 	_agents[id] = sprite
+	# จอ hologram ประจำโต๊ะ (M3-7) — ลอยเหนือ desk, อยู่กับที่แม้ agent เดินไปไหน
+	var screen := HologramScreen.new()
+	screen.position = Iso.grid_to_screen(desk) + Vector2(0, -44)
+	_world.add_child(screen)
+	_screens[id] = screen
 	# status เริ่มต้นจาก registry — เดินไป zone ที่ถูกต้องเลยถ้าไม่ใช่ที่ desk
 	_apply_status(id, str(cfg.get("status", "idle")))
 
@@ -138,9 +144,11 @@ func _on_event(event: Dictionary) -> void:
 		"task.completed":
 			_say(data, str(data.get("output", "")))
 			_fx_at(str(data.get("agent_id", "")), "fx_done")
+			_flash_screen(str(data.get("agent_id", "")), "done")
 		"task.failed":
 			_say(data, "ล้มเหลว: " + str(data.get("error", "")))
 			_fx_at(str(data.get("agent_id", "")), "fx_error")
+			_flash_screen(str(data.get("agent_id", "")), "error")
 		"social.chat":
 			_say(data, str(data.get("text", "")))
 		"proposal.created":
@@ -158,6 +166,9 @@ func _on_event(event: Dictionary) -> void:
 				_auto_slept.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)
+				if _screens.has(id):
+					_screens[id].queue_free()
+					_screens.erase(id)
 
 
 func _dump_positions() -> void:
@@ -189,6 +200,12 @@ func _fx_at(agent_id: String, fx_name: String) -> void:
 		_fx.play(fx_name, sprite.position)
 
 
+func _flash_screen(agent_id: String, kind: String) -> void:
+	# M3-7 — แฟลช done/error บนจอ desk ของ agent
+	if _screens.has(agent_id):
+		_screens[agent_id].flash(kind)
+
+
 func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -> void:
 	var sprite: AgentSprite = _agents.get(agent_id)
 	if sprite == null:
@@ -196,6 +213,8 @@ func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -
 	if from_daemon:
 		_auto_slept.erase(agent_id)  # daemon สั่งมาเอง → ไม่นับเป็นหลับอัตโนมัติแล้ว
 	sprite.set_status(status)
+	if _screens.has(agent_id):
+		_screens[agent_id].set_state(status)  # จอ desk สลับอนิเมชันตาม state (M3-7)
 	match status:
 		"working", "thinking", "idle":
 			_release_spot(agent_id)
