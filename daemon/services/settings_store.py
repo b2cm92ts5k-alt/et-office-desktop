@@ -19,6 +19,7 @@ DEFAULTS: dict = {
     "onboarded": False,              # ผ่าน onboarding สร้าง CEO แล้วหรือยัง (M8)
     "github_login": "",              # username ที่ผูก GitHub token ไว้ (M9-3) — token เก็บใน .env
     "github_repo": "",               # repo เป้าหมายของทีม "owner/name" (M9-4)
+    "mcp_servers": [],               # MCP servers [{name, command, enabled}] (M10)
 }
 
 

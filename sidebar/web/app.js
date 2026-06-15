@@ -394,9 +394,62 @@ async function loadSettings() {
     document.getElementById("ws-path").value = ws.path;
     renderWsStatus(ws);
     loadModelCatalog();
+    loadMcp();
   } catch {
     feedLine("error", "โหลด settings ไม่ได้");
   }
+}
+
+/* ---------- MCP servers (M10-4) ---------- */
+
+async function loadMcp() {
+  try {
+    const d = await (await fetch(BASE + "/mcp/servers")).json();
+    renderMcp(d.servers || []);
+  } catch { /* daemon down */ }
+}
+
+function renderMcp(servers) {
+  const el = document.getElementById("mcp-list");
+  if (!servers.length) { el.innerHTML = '<span class="empty-note">ยังไม่ได้เชื่อม MCP server</span>'; return; }
+  el.innerHTML = servers.map(s =>
+    `<div class="mcp-row"><span class="mcp-info"><b>${esc(s.name)}</b> <span class="mcp-stat">${esc(s.status)}</span>` +
+    `<div class="mcp-cmd">${esc(s.command)}</div></span>` +
+    `<button class="neon-btn sm danger" onclick="removeMcp('${esc(s.name)}')">ลบ</button></div>`
+  ).join("");
+}
+
+async function addMcp() {
+  const name = document.getElementById("mcp-name").value.trim();
+  const command = document.getElementById("mcp-cmd").value.trim();
+  if (!name || !command) return;
+  document.getElementById("mcp-list").textContent = "กำลังเชื่อม…";
+  try {
+    const res = await fetch(BASE + "/mcp/servers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, command }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      document.getElementById("mcp-name").value = "";
+      document.getElementById("mcp-cmd").value = "";
+      renderMcp(data.servers || []);
+      feedLine("done", `เพิ่ม MCP server: ${esc(name)}`);
+    } else {
+      feedLine("error", esc(data.detail || "เพิ่ม MCP ไม่สำเร็จ"));
+      loadMcp();
+    }
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
+}
+
+async function removeMcp(name) {
+  try {
+    const res = await fetch(BASE + "/mcp/servers/" + encodeURIComponent(name), { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    renderMcp(data.servers || []);
+    feedLine("done", `ลบ MCP server: ${esc(name)}`);
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
 }
 
 /* ---------- local model manager (M7-5) ---------- */

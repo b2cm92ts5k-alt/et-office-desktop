@@ -508,6 +508,12 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
 .ceo-tag { font-size: 11px; }
 .agent-card.ceo { border-color: var(--gold); }
 
+/* MCP servers (M10-4) */
+.mcp-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.mcp-info { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+.mcp-stat { font-family: var(--font-thai); font-size: 10px; color: var(--sub); }
+.mcp-cmd { font-family: var(--font-mono); font-size: 9px; color: var(--sub); word-break: break-all; margin-top: 2px; }
+
 /* terminal file drop (M9-2) */
 .attached { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px; }
 .attached.hidden { display: none; }

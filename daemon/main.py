@@ -14,7 +14,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 load_dotenv(Path(__file__).parent / ".env")  # โหลดก่อน import modules ที่อ่าน env
 
 from .database import init_db                              # noqa: E402
-from .routes import agents, events, files, logs, models, permissions, proposals, roles, settings, sprites, system, tasks  # noqa: E402
+from .routes import agents, events, files, logs, mcp, models, permissions, proposals, roles, settings, sprites, system, tasks  # noqa: E402
 from .services.permission_gate import permission_gate      # noqa: E402
 from .services.social_service import social_service        # noqa: E402
 from .services.ws_manager import ws_manager                # noqa: E402
@@ -28,6 +28,8 @@ async def lifespan(app: FastAPI):
     social_service.start()  # idle social loop (M3-9)
     yield
     social_service.stop()
+    from .services.mcp_service import mcp_service  # ปิด MCP subprocess ที่ค้าง (M10)
+    mcp_service.stop_all()
 
 
 app = FastAPI(
@@ -60,6 +62,7 @@ async def _no_cache_sidebar(request, call_next):
 app.include_router(system.router)
 app.include_router(models.router)
 app.include_router(files.router)
+app.include_router(mcp.router)
 app.include_router(agents.router)
 app.include_router(tasks.router)
 app.include_router(roles.router)

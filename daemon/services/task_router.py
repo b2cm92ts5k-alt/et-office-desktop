@@ -26,6 +26,7 @@ from ..adapters.llm_adapter import get_llm
 from ..models.schemas import AgentConfig, TaskLog
 from .agent_registry import registry
 from .log_service import log_service
+from .mcp_service import mcp_service
 from .permission_gate import permission_gate
 from .settings_store import settings_store
 from .tool_executor import TOOLS_SPEC, WorkspaceError, execute, summarize, workspace_root
@@ -154,9 +155,16 @@ class TaskRouter:
         except WorkspaceError as exc:
             return f"ใช้ workspace ไม่ได้: {exc}"
         llm = get_llm(agent_cfg.llm, temperature=0.2)  # tool loop ต้องนิ่ง ไม่ใช่สร้างสรรค์
+        # รวม MCP tools (M10-3) เข้ากับ tool ในตัว — ชื่อ namespaced mcp__<srv>__<tool>
+        mcp_tools = mcp_service.tools()
+        mcp_names = {t["name"] for t in mcp_tools}
+        tool_lines = _TOOL_LINES
+        if mcp_tools:
+            tool_lines += "\n" + "\n".join(
+                f"- {t['name']}({', '.join(t['args'])}) — {t['desc']}" for t in mcp_tools)
         system = _LOOP_PROMPT.format(
             system_prompt=agent_cfg.system_prompt or f"คุณคือ {agent_cfg.name} ({agent_cfg.role})",
-            root=str(root), tools=_TOOL_LINES)
+            root=str(root), tools=tool_lines)
         messages: list[dict] = [
             {"role": "system", "content": system},
             {"role": "user", "content": task.message},
@@ -193,16 +201,17 @@ class TaskRouter:
             action = data.get("action") or {}
             tool = str(action.get("tool", ""))
             args = action.get("args") or {}
-            if tool not in TOOLS_SPEC:
+            is_mcp = tool in mcp_names
+            if tool not in TOOLS_SPEC and not is_mcp:
                 observation = f"ไม่รู้จัก tool '{tool}' — ที่มี: {', '.join(TOOLS_SPEC)}"
             else:
-                summary = summarize(tool, args)
+                summary = f"MCP เรียก {tool}" if is_mcp else summarize(tool, args)
                 detail = json.dumps(args, ensure_ascii=False)[:2000]
                 approved = permission_gate.request(
                     task.task_id, agent_cfg.id, agent_cfg.name, tool, summary, detail)
                 if approved:
                     try:
-                        observation = execute(tool, args)
+                        observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args)
                         actions_done += 1
                     except WorkspaceError as exc:
                         observation = f"โดนบล็อค: {exc}"

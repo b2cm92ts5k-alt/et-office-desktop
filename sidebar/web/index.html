@@ -108,6 +108,15 @@
       </div>
       <div id="model-mini-status" class="set-row mc-mini">…</div>
 
+      <h3>MCP — เชื่อมเครื่องมือภายนอก (M10)</h3>
+      <div class="set-row key-row">
+        <input id="mcp-name" type="text" placeholder="ชื่อสั้น เช่น files" style="max-width:90px">
+        <input id="mcp-cmd" type="text" placeholder="คำสั่ง เช่น npx -y @modelcontextprotocol/server-filesystem D:\งาน">
+        <button class="neon-btn" onclick="addMcp()">ADD</button>
+      </div>
+      <div id="mcp-list" class="set-row"></div>
+      <div class="warn-note">tools ของ MCP server จะให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;) ผ่าน permission gate เหมือน tool อื่น</div>
+
       <h3>SOCIAL LOOP</h3>
       <div class="set-row">
         <label class="inline"><input type="checkbox" id="soc-enabled"> เปิด agent คุยกันเอง</label>
