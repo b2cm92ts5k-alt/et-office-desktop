@@ -7,12 +7,24 @@ class_name AgentSprite
 
 const SHEET_DIR := "res://assets/sprites/characters/"
 const SPRITES_URL := "http://localhost:8797/sprites/files/"  # custom sheet จาก daemon (M6-2 v2)
-const FRAME_COLS := 6        # walk 6 เฟรม
-const FRAME_ROWS := 4        # แถวเดิน: SE, SW, NE, NW (แถวบนสุดของทุก layout)
+const FRAME_COLS := 6        # 6 คอลัมน์/แถว (จำนวนเฟรมจริงต่อท่าดูที่ ANIM)
 const CELL_H := 48           # ความสูงต่อเฟรมคงที่ — แผ่นเต็ม v2 (192x528) มี 11 แถว
-                             # ตอนนี้เล่นเฉพาะแถวเดิน — อนิเมชัน idle/sit/sleep รอ CEO สั่ง
-const WALK_FPS := 8.0        # ตาม ART-SPEC
 const WALK_SPEED := 48.0     # px/วินาที (1.5 tiles/s)
+
+# M6-2b: เล่นอนิเมชัน idle/sit/sleep จาก spritesheet v2 (192x528, 11 แถว)
+# row layout ตาม ART-SPEC §3: 0-3 walk · 4-7 idle · 8-9 sit(SE,SW) · 10 sleep
+const ROW_WALK := 0
+const ROW_IDLE := 4
+const ROW_SIT := 8
+const ROW_SLEEP := 10
+# ต่อท่า: [row ฐาน, จำนวนเฟรม, fps, ต้องมีอย่างน้อยกี่แถวในแผ่น (back-compat)]
+const ANIM := {
+	"walk":  {"row": ROW_WALK,  "frames": 6, "fps": 8.0, "need": 4},
+	"idle":  {"row": ROW_IDLE,  "frames": 4, "fps": 4.0, "need": 8},
+	"sit":   {"row": ROW_SIT,   "frames": 4, "fps": 6.0, "need": 10},
+	"sleep": {"row": ROW_SLEEP, "frames": 2, "fps": 2.0, "need": 11},
+	"stand": {"row": ROW_WALK,  "frames": 1, "fps": 0.0, "need": 4},  # fallback แผ่น 192x192
+}
 
 enum Facing { SE = 0, SW = 1, NE = 2, NW = 3 }
 
@@ -32,7 +44,9 @@ var _zzz: Label
 var _zzz_t: float = 0.0
 var _sleep_visual := false
 var _facing: int = Facing.SE
-var _walk_frame: float = 0.0
+var _anim: String = "stand"
+var _anim_frame: float = 0.0
+var _total_rows: int = 4         # จำนวนแถวจริงในแผ่น (192x192→4, 192x528→11)
 var _path: Array[Vector2i] = []
 var _grid_pos: Vector2i = Vector2i.ZERO
 
@@ -52,11 +66,12 @@ func setup(id: String, display_name: String, sprite_key: String, color: Color,
 	if not ResourceLoader.exists(path):
 		path = SHEET_DIR + "char_producer.png"  # fallback
 	_sprite.texture = load(path)
+	_total_rows = maxi(1, _sprite.texture.get_height() / CELL_H)  # 192x192→4, 192x528→11
 	_sprite.hframes = FRAME_COLS
-	_sprite.vframes = FRAME_ROWS
+	_sprite.vframes = _total_rows
 	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	# origin ที่เท้า (กึ่งกลางล่าง) — จำเป็นสำหรับ y-sort ตาม ART-SPEC
-	_sprite.offset = Vector2(0, -float(_sprite.texture.get_height()) / FRAME_ROWS / 2.0)
+	_sprite.offset = Vector2(0, -CELL_H / 2.0)
 	add_child(_sprite)
 
 	_hud = AgentHud.new()
@@ -91,7 +106,8 @@ func _fetch_custom_sheet(file: String) -> void:
 		var img := Image.new()
 		if img.load_png_from_buffer(body) != OK:
 			return
-		_sprite.vframes = maxi(1, img.get_height() / CELL_H)
+		_total_rows = maxi(1, img.get_height() / CELL_H)
+		_sprite.vframes = _total_rows
 		_sprite.texture = ImageTexture.create_from_image(img)
 		_sprite.offset = Vector2(0, -CELL_H / 2.0)
 		_update_frame())
@@ -144,28 +160,22 @@ func _process(delta: float) -> void:
 		_zzz_t += delta
 		_zzz.position.y = -44.0 + sin(_zzz_t * 2.0) * 2.0  # Zzz ลอยขึ้นลงเบา ๆ
 
-	if _path.is_empty():
-		if _walk_frame != 0.0:  # หยุดเดิน → เฟรมยืน
-			_walk_frame = 0.0
-			_update_frame()
-		if status == "sleep" and not _sleep_visual:
-			_set_sleep_visual(true)
-		return
+	if not _path.is_empty():
+		var target := Iso.grid_to_screen(_path[0])
+		var diff := target - position
+		var step := WALK_SPEED * delta
+		if diff.length() <= step:
+			position = target
+			_grid_pos = _path.pop_front()
+			if _path.is_empty():
+				arrived.emit()
+		else:
+			position += diff.normalized() * step
+			_set_facing_from(diff)
+	elif status == "sleep" and not _sleep_visual:
+		_set_sleep_visual(true)
 
-	var target := Iso.grid_to_screen(_path[0])
-	var diff := target - position
-	var step := WALK_SPEED * delta
-	if diff.length() <= step:
-		position = target
-		_grid_pos = _path.pop_front()
-		if _path.is_empty():
-			arrived.emit()
-	else:
-		position += diff.normalized() * step
-		_set_facing_from(diff)
-
-	_walk_frame = fmod(_walk_frame + WALK_FPS * delta, float(FRAME_COLS))
-	_update_frame()
+	_advance_anim(delta)
 
 
 func _set_facing_from(diff: Vector2) -> void:
@@ -176,5 +186,44 @@ func _set_facing_from(diff: Vector2) -> void:
 		_facing = Facing.NE if diff.x >= 0 else Facing.NW
 
 
+# --- animation state machine (M6-2b) ---------------------------------
+# เลือกท่าจาก status/การเดินทุกเฟรม → เล่นวนตาม fps ของท่านั้น
+# แผ่น 192x192 (ไม่มีแถว idle/sit/sleep) → fallback "stand" (ยืนนิ่ง walk เฟรม 0)
+
+func _resolve_anim() -> String:
+	if not _path.is_empty():
+		return "walk"
+	var want := "idle"
+	if _sleep_visual:
+		want = "sleep"
+	elif status == "working":
+		want = "sit"
+	if _total_rows < int(ANIM[want]["need"]):
+		return "stand"
+	return want
+
+
+func _advance_anim(delta: float) -> void:
+	var anim := _resolve_anim()
+	if anim != _anim:
+		_anim = anim
+		_anim_frame = 0.0
+	var info: Dictionary = ANIM[anim]
+	_anim_frame = fmod(_anim_frame + float(info["fps"]) * delta, float(info["frames"]))
+	_update_frame()
+
+
+func _anim_row(anim: String) -> int:
+	match anim:
+		"idle":
+			return ROW_IDLE + _facing
+		"sit":  # มีเฉพาะ SE/SW — facing ฝั่งขวา(SE/NE)=แถว SE, ฝั่งซ้าย(SW/NW)=แถว SW
+			return ROW_SIT + (0 if _facing == Facing.SE or _facing == Facing.NE else 1)
+		"sleep":
+			return ROW_SLEEP
+		_:  # walk / stand
+			return ROW_WALK + _facing
+
+
 func _update_frame() -> void:
-	_sprite.frame = _facing * FRAME_COLS + int(_walk_frame)
+	_sprite.frame = _anim_row(_anim) * FRAME_COLS + int(_anim_frame)
