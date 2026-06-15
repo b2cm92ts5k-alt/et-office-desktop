@@ -29,6 +29,7 @@ const ANIM := {
 enum Facing { SE = 0, SW = 1, NE = 2, NW = 3 }
 
 const SLEEP_TINT := Color(0.55, 0.55, 0.75)  # ตัวหม่นลงตอนหลับ (M3-5)
+const BUNK_RAISE := 26.0                      # ยกภาพขึ้นเตียงชั้น 2 (top bunk)
 
 signal arrived
 
@@ -43,6 +44,8 @@ var _aura: NeonAura
 var _zzz: Label
 var _zzz_t: float = 0.0
 var _sleep_visual := false
+var _bunk_level: int = 0          # 0 = เตียงล่าง, 1 = เตียงบน (top bunk) — ยกภาพ + z สูงกว่า
+var _vis_raise: float = 0.0       # ระยะยกภาพปัจจุบัน (px) เฉพาะตอนหลับบนเตียงบน
 var _facing: int = Facing.SE
 var _anim: String = "stand"
 var _anim_frame: float = 0.0
@@ -133,6 +136,21 @@ func _set_sleep_visual(on: bool) -> void:
 	_sleep_visual = on
 	_sprite.modulate = SLEEP_TINT if on else Color.WHITE
 	_zzz.visible = on
+	_apply_raise()  # หลับบนเตียงชั้น 2 → ยกภาพขึ้น
+
+
+func set_bunk(level: int) -> void:
+	# M3-5/ข้อ3 — กำหนดชั้นเตียง: ชั้นบน (1) วาดสูงกว่า + z สูงกว่าคนเตียงล่างที่ cell เดียวกัน
+	_bunk_level = level
+	z_index = 2 if level >= 1 else 0
+	_apply_raise()
+
+
+func _apply_raise() -> void:
+	# ยกภาพ (sprite + hud) ขึ้นเฉพาะตอน "หลับบนเตียงชั้น 2" — y-sort คีย์ (position) คงเดิม
+	_vis_raise = BUNK_RAISE if (_bunk_level >= 1 and _sleep_visual) else 0.0
+	_sprite.position.y = -_vis_raise
+	_hud.position.y = -_vis_raise
 
 
 func place_at(grid: Vector2i) -> void:
@@ -158,7 +176,7 @@ func is_walking() -> bool:
 func _process(delta: float) -> void:
 	if _sleep_visual:
 		_zzz_t += delta
-		_zzz.position.y = -44.0 + sin(_zzz_t * 2.0) * 2.0  # Zzz ลอยขึ้นลงเบา ๆ
+		_zzz.position.y = -44.0 - _vis_raise + sin(_zzz_t * 2.0) * 2.0  # Zzz ลอยขึ้นลงเบา ๆ (ตามชั้นเตียง)
 
 	if not _path.is_empty():
 		var target := Iso.grid_to_screen(_path[0])

@@ -41,7 +41,10 @@ func setup(display_name: String, role_color: Color) -> void:
 	_name_label = Label.new()
 	_name_label.text = display_name
 	_name_label.add_theme_font_size_override("font_size", 8)
-	_name_label.add_theme_color_override("font_color", role_color)
+	# กันชื่อกลืนพื้นมืด: ดึงสีให้สว่างพอเสมอ (รักษาโทน) + outline ดำรอบตัวอักษร
+	_name_label.add_theme_color_override("font_color", _readable(role_color))
+	_name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_name_label.add_theme_constant_override("outline_size", 4)
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_name_label.custom_minimum_size = Vector2(80, 0)
 	_name_label.position = Vector2(-40, NAME_Y)
@@ -132,3 +135,10 @@ func _show_bubble(text: String, multiline: bool) -> void:
 func _center_pill() -> void:
 	_pill.reset_size()
 	_pill.position = Vector2(-_pill.size.x / 2.0, PILL_Y)
+
+
+func _readable(c: Color) -> Color:
+	# บังคับชื่อให้อ่านออกบนพื้นมืดเสมอ — ดันค่า value (HSV) ขึ้นถ้าเข้มเกิน, คงโทนสีเดิม
+	# สีเกือบดำ/เทาเข้ม → กลายเป็นเทาสว่าง (s ต่ำ v สูง) ไม่ใช่สีทึบมองไม่เห็น
+	var v: float = maxf(c.v, 0.82)
+	return Color.from_hsv(c.h, c.s, v, 1.0)

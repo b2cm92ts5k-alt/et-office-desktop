@@ -21,10 +21,17 @@ const DESK_SPOTS: Array[Vector2i] = [
 ]
 const ZONE_SPOTS := {
 	# (11,6) เดิมกลายเป็น OPS หลังขยายโซน — ย้ายเข้า CAFE ใหม่ (y เริ่ม 7)
+	# จุดละ 1 ตัวเท่านั้น (ห้ามยืนซ้อน) — เต็มแล้วไม่เด้งสุ่มทับ (ข้อ 2)
 	"cafe":    [Vector2i(8, 7), Vector2i(10, 8), Vector2i(9, 10), Vector2i(12, 9)],
 	"meeting": [Vector2i(2, 7), Vector2i(4, 8), Vector2i(2, 9), Vector2i(4, 10)],
-	"dorm":    [Vector2i(14, 7), Vector2i(16, 8), Vector2i(14, 9), Vector2i(16, 10)],
 }
+# DORM: เตียงสองชั้น 4 หลัง (ตรง bed_bunk ใน office_builder) — หลังละ 2 ที่ (ล่าง/บน)
+# = รับได้สูงสุด 8 ตัว (ข้อ 4). bunk 0=ล่าง 1=บน (บนยกภาพ+z สูงกว่า — ข้อ 3)
+const DORM_BEDS: Array[Vector2i] = [
+	Vector2i(14, 7), Vector2i(16, 8), Vector2i(14, 9), Vector2i(16, 10),
+]
+const BUNK_CAP := 2
+const NO_SPOT := Vector2i(-1, -1)  # sentinel: zone เต็ม (ไม่มีที่ว่าง)
 
 # map ชื่อ role (จาก daemon registry) → sprite key (ชื่อไฟล์ char_<key>.png)
 const ROLE_SPRITES := {
@@ -37,8 +44,11 @@ const ROLE_SPRITES := {
 var _agents: Dictionary = {}      # agent_id -> AgentSprite
 var _screens: Dictionary = {}     # agent_id -> HologramScreen (จอ desk, M3-7)
 var _desk_of: Dictionary = {}     # agent_id -> Vector2i
-var _spot_of: Dictionary = {}     # agent_id -> Vector2i spot ที่จองใน zone
-var _spot_owner: Dictionary = {}  # Vector2i -> agent_id (กันยืนซ้อน)
+var _desk_taken: Dictionary = {}  # Vector2i -> agent_id (1 โต๊ะ 1 คน — ข้อ 2)
+var _spot_of: Dictionary = {}     # agent_id -> Vector2i spot ที่จองใน cafe/meeting
+var _spot_owner: Dictionary = {}  # Vector2i -> agent_id (1 จุด 1 คน)
+var _bed_of: Dictionary = {}      # agent_id -> {"cell": Vector2i, "bunk": int}
+var _bed_occ: Dictionary = {}     # "x,y" -> Array[String] ขนาด BUNK_CAP (index=bunk, ""=ว่าง)
 var _auto_slept: Dictionary = {}  # agent_id -> true เมื่อหลับโดย night logic (ไม่ใช่ daemon)
 var _nav: OfficeNav
 var _http: HTTPRequest
@@ -109,7 +119,7 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 		_sprite_key_for(str(cfg.get("role", "")) + " " + str(cfg.get("name", ""))),
 		Color(str(cfg.get("color", "#00e5ff"))),
 		str(cfg.get("sprite", "")))  # custom spritesheet (M6-2 v2)
-	var desk := DESK_SPOTS[index % DESK_SPOTS.size()]
+	var desk := _claim_desk(id, index)
 	_desk_of[id] = desk
 	sprite.place_at(desk)
 	# จอ hologram ประจำโต๊ะ (M3-7) — position = cell เดียวกับ desk/agent (y-sort คีย์เท่ากัน)
@@ -163,7 +173,8 @@ func _on_event(event: Dictionary) -> void:
 		"agent.deleted":
 			var id := str(data.get("agent_id", ""))
 			if _agents.has(id):
-				_release_spot(id)
+				_release_rest(id)
+				_release_desk(id)
 				_desk_of.erase(id)
 				_auto_slept.erase(id)
 				_agents[id].queue_free()
@@ -214,35 +225,76 @@ func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -
 		return
 	if from_daemon:
 		_auto_slept.erase(agent_id)  # daemon สั่งมาเอง → ไม่นับเป็นหลับอัตโนมัติแล้ว
+
+	# sleep แต่เตียงเต็ม (8 ตัว) → นอนไม่ได้ ตกกลับเป็น idle (ข้อ 4)
+	var bunk: Dictionary = {}
+	if status == "sleep":
+		bunk = _claim_bunk(agent_id)
+		if bunk.is_empty():
+			status = "idle"
+
 	sprite.set_status(status)
 	if _screens.has(agent_id):
 		_screens[agent_id].set_state(status)  # จอ desk สลับอนิเมชันตาม state (M3-7)
 	match status:
 		"working", "thinking", "idle":
-			_release_spot(agent_id)
+			_release_rest(agent_id)
+			sprite.set_bunk(0)
 			_walk_to(sprite, _desk_of.get(agent_id, DESK_SPOTS[0]))
 		"break":
-			_walk_to(sprite, _claim_spot("cafe", agent_id))
+			_release_bed(agent_id)
+			sprite.set_bunk(0)
+			_go_zone(sprite, agent_id, "cafe")
 		"collab":
-			_walk_to(sprite, _claim_spot("meeting", agent_id))
+			_release_bed(agent_id)
+			sprite.set_bunk(0)
+			_go_zone(sprite, agent_id, "meeting")
 		"sleep":
-			_walk_to(sprite, _claim_spot("dorm", agent_id))
+			_release_spot(agent_id)         # ปล่อยที่ cafe/meeting ถ้าเคยจอง
+			sprite.set_bunk(int(bunk["bunk"]))  # ชั้นบน → ยกภาพ + z สูงกว่า (ข้อ 3)
+			_walk_to(sprite, bunk["cell"])
 
 
 func _walk_to(sprite: AgentSprite, dest: Vector2i) -> void:
-	if sprite.grid_pos() == dest:
+	if dest == NO_SPOT or sprite.grid_pos() == dest:
 		return
 	sprite.walk_path(_nav.find_path(sprite.grid_pos(), dest))
 
 
+func _go_zone(sprite: AgentSprite, agent_id: String, zone: String) -> void:
+	# เดินไปจุดว่างใน zone — ถ้าเต็มอยู่ที่เดิม (ไม่ยืนทับ — ข้อ 2)
+	var spot := _claim_spot(zone, agent_id)
+	if spot != NO_SPOT:
+		_walk_to(sprite, spot)
+
+
+# --- desk (1 โต๊ะ 1 คน — ข้อ 2) ---------------------------------------
+
+func _claim_desk(agent_id: String, index: int) -> Vector2i:
+	for d: Vector2i in DESK_SPOTS:
+		if not _desk_taken.has(d):
+			_desk_taken[d] = agent_id
+			return d
+	return DESK_SPOTS[index % DESK_SPOTS.size()]  # agent เกินจำนวนโต๊ะ (>9) — ยอมซ้ำ
+
+
+func _release_desk(agent_id: String) -> void:
+	if _desk_of.has(agent_id):
+		_desk_taken.erase(_desk_of[agent_id])
+
+
+# --- cafe / meeting (1 จุด 1 คน) -------------------------------------
+
 func _claim_spot(zone: String, agent_id: String) -> Vector2i:
-	# จอง spot ว่างใน zone — กัน agent ยืนทับกัน (M3-5 polish จาก M3-3)
+	# จอง spot ว่างใน zone — เต็มแล้วคืน NO_SPOT (ไม่เด้งสุ่มทับกัน — ข้อ 2)
 	if _spot_of.has(agent_id) and _spot_of[agent_id] in (ZONE_SPOTS[zone] as Array):
 		return _spot_of[agent_id]  # จองที่ใน zone นี้อยู่แล้ว ใช้ที่เดิม
 	_release_spot(agent_id)
 	var spots: Array = ZONE_SPOTS[zone]
 	var free := spots.filter(func(s: Vector2i) -> bool: return not _spot_owner.has(s))
-	var spot: Vector2i = free.pick_random() if not free.is_empty() else spots.pick_random()
+	if free.is_empty():
+		return NO_SPOT
+	var spot: Vector2i = free.pick_random()
 	_spot_of[agent_id] = spot
 	_spot_owner[spot] = agent_id
 	return spot
@@ -252,6 +304,51 @@ func _release_spot(agent_id: String) -> void:
 	if _spot_of.has(agent_id):
 		_spot_owner.erase(_spot_of[agent_id])
 		_spot_of.erase(agent_id)
+
+
+# --- dorm: เตียง 2 ชั้น × 4 หลัง = สูงสุด 8 ตัว (ข้อ 3, 4) ------------
+
+func _bed_key(cell: Vector2i) -> String:
+	return "%d,%d" % [cell.x, cell.y]
+
+
+func _claim_bunk(agent_id: String) -> Dictionary:
+	# คืน {cell, bunk} ของเตียงว่าง (bunk 0=ล่าง 1=บน) — {} ถ้า dorm เต็มหมด (8 ตัว)
+	# spread: เติมเตียง "ล่าง" ให้ครบทุกหลังก่อน แล้วค่อยขึ้น "ชั้นบน" (คนมาทีหลังอยู่บน — ข้อ 3)
+	if _bed_of.has(agent_id):
+		return _bed_of[agent_id]
+	for level in BUNK_CAP:
+		for bed: Vector2i in DORM_BEDS:
+			var key := _bed_key(bed)
+			var occ: Array = _bed_occ.get(key, [])
+			if occ.is_empty():
+				occ.resize(BUNK_CAP)
+				occ.fill("")
+			if str(occ[level]) == "":
+				occ[level] = agent_id
+				_bed_occ[key] = occ
+				_bed_of[agent_id] = {"cell": bed, "bunk": level}
+				return _bed_of[agent_id]
+	return {}
+
+
+func _release_bed(agent_id: String) -> void:
+	if not _bed_of.has(agent_id):
+		return
+	var info: Dictionary = _bed_of[agent_id]
+	var key := _bed_key(info["cell"])
+	if _bed_occ.has(key):
+		var occ: Array = _bed_occ[key]
+		var lv: int = info["bunk"]
+		if lv >= 0 and lv < occ.size() and str(occ[lv]) == agent_id:
+			occ[lv] = ""
+	_bed_of.erase(agent_id)
+
+
+func _release_rest(agent_id: String) -> void:
+	# ออกจากที่พักทุกชนิด (cafe/meeting + เตียง) — เรียกตอนกลับไปทำงาน/ถูกลบ
+	_release_spot(agent_id)
+	_release_bed(agent_id)
 
 
 # --- Night shift (M3-5) — DEEP NIGHT ตาม design doc §04 -----------------
