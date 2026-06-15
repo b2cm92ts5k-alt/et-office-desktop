@@ -5,9 +5,18 @@
 <title>ET Office Sidebar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
+
+<!-- System status overlay (M5-5) — connecting / daemon down -->
+<div id="sys-overlay" class="hidden">
+  <div class="sys-box">
+    <div class="sys-spinner"></div>
+    <div id="sys-title" class="sys-title">กำลังเชื่อมต่อ…</div>
+    <div id="sys-msg" class="sys-msg"></div>
+  </div>
+</div>
 
 <!-- แถบหุบ (M4-3) — เห็นเฉพาะตอน collapsed -->
 <div id="strip" onclick="toggleSidebar()" title="เปิด ET Office">
@@ -24,6 +33,12 @@
     </div>
     <button class="ghost" onclick="toggleSidebar()" title="หุบ">»</button>
   </header>
+
+  <!-- Ollama warning (M5-5) — local model ใช้ไม่ได้ -->
+  <div id="ollama-warn" class="sys-banner hidden">
+    ⚠ Ollama ไม่ได้รัน — agent ที่ใช้ local model จะทำงานไม่ได้<br>
+    เปิด Ollama แล้วรอสักครู่ (หรือใช้ cloud model ที่ตั้ง API key ไว้)
+  </div>
 
   <!-- Agent list (M4-4) -->
   <section id="agents-panel">
@@ -244,6 +259,6 @@
   </div>
 </div>
 
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

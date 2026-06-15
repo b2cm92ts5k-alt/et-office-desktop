@@ -39,6 +39,10 @@ async function loadAgents() {
 function renderAgents() {
   const el = document.getElementById("agent-list");
   el.innerHTML = "";
+  if (Object.keys(agents).length === 0) {
+    el.innerHTML = '<div class="empty-note">ยังไม่มี agent — กด <b>+ HIRE</b> เพื่อจ้างทีม</div>';
+    return;
+  }
   for (const a of Object.values(agents)) {
     const card = document.createElement("div");
     card.className = "agent-card";
@@ -395,6 +399,7 @@ async function loadSettings() {
     renderWsStatus(ws);
     loadModelCatalog();
     loadMcp();
+    checkOllama();   // เปิด settings = จังหวะดีเช็ค ollama ซ้ำ (M5-5)
   } catch {
     feedLine("error", "โหลด settings ไม่ได้");
   }
@@ -919,6 +924,26 @@ async function saveModel() {
   }
 }
 
+/* ---------- system status: connecting / daemon down / ollama (M5-5) ---------- */
+
+function showOverlay(state, title, msg) {
+  const ov = document.getElementById("sys-overlay");
+  if (!ov) return;
+  if (state === "ok") { ov.classList.add("hidden"); return; }
+  ov.classList.toggle("down", state === "down");
+  document.getElementById("sys-title").textContent = title;
+  document.getElementById("sys-msg").innerHTML = msg || "";
+  ov.classList.remove("hidden");
+}
+
+// /health บอก ollama_ok — เปิด/ปิด banner เตือน (local model ใช้ไม่ได้)
+async function checkOllama() {
+  try {
+    const h = await (await fetch(BASE + "/health")).json();
+    document.getElementById("ollama-warn").classList.toggle("hidden", h.ollama_ok !== false);
+  } catch { /* daemon down — sys-overlay จัดการแล้ว */ }
+}
+
 /* ---------- WebSocket (realtime) ---------- */
 
 let qaFired = false;
@@ -940,6 +965,8 @@ function connectWs() {
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
     setDaemonDot(true);
+    showOverlay("ok");
+    checkOllama();      // เตือนถ้า Ollama ยังไม่ขึ้น (M5-5)
     feedLine("done", "เชื่อมต่อ daemon แล้ว");
     loadAgents().then(runQaHooks);
     loadProposals();
@@ -949,6 +976,10 @@ function connectWs() {
   };
   ws.onclose = () => {
     setDaemonDot(false);
+    showOverlay("down", "DAEMON ไม่ทำงาน",
+      "เชื่อมต่อ daemon (port 8797) ไม่ได้<br>" +
+      "เปิด <b>ET-Office.exe</b> (หรือรัน launcher) ทิ้งไว้<br>" +
+      "กำลังลองเชื่อมใหม่อัตโนมัติ…");
     setTimeout(connectWs, RECONNECT_MS);
   };
   ws.onmessage = (m) => {
@@ -1018,6 +1049,7 @@ function handleEvent(ev) {
     case "model.install.done":
       updateInstallBanner(null);
       feedLine("done", `✔ ติดตั้ง ${esc(d.tag)} เสร็จ — เลือกใช้ได้แล้วตอนสร้าง agent`);
+      checkOllama();   // ลง model แรกแล้ว → เคลียร์ banner เตือนถ้า ollama พร้อม (M5-5)
       if (settingsOpen) loadModelCatalog();
       break;
     case "model.install.error":
@@ -1124,4 +1156,5 @@ function trim(s, n) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
+showOverlay("connecting", "กำลังเชื่อมต่อ…", "กำลังเชื่อมกับ daemon (port 8797)");
 connectWs();
