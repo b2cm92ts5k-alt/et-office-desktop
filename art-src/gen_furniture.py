@@ -205,10 +205,36 @@ def sofa_long():
     return img
 
 
+def desk_ceo_long():
+    """โต๊ะ CEO ยาว 2 บล็อค (dimetric แกน +y ลงซ้าย) โทนทอง + จอ — ไกด์ CEO มิ.ย.2026"""
+    img, d = _canvas(120, 104)
+    ox, oy = 80, 40
+    top = slab(d, ox, oy, 1, 2, 12, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    neon_top_edge(d, top, GOLD)
+    # จอมอนิเตอร์วางบนหน้าโต๊ะ (ปลายด้านหลัง = tile gy แรก)
+    mcx, mby = 80, 44
+    box(d, mcx, mby, 18, 9, 16, (8, 6, 16, 255), (6, 4, 12, 255), (5, 3, 10, 255))
+    d.rectangle([mcx - 7, mby - 34, mcx + 7, mby - 26], fill=(6, 10, 20, 255), outline=GOLD)
+    d.line([mcx - 5, mby - 31, mcx + 4, mby - 31], fill=GOLD, width=1)
+    return img
+
+
+def chair_ceo_long():
+    """เก้าอี้/ม้านั่ง CEO ยาว 2 บล็อค (dimetric แกน +y) + พนักพิง โทนทอง"""
+    img, d = _canvas(112, 96)
+    ox, oy = 76, 36
+    seat = slab(d, ox, oy, 1, 2, 10, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    neon_top_edge(d, seat, GOLD)
+    # พนักพิงด้านหลัง (ขอบ gx=0 ยกสูง 18)
+    slab(d, ox, oy, 0.3, 2, 18, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    return img
+
+
 def main():
     desk(CYAN).save(OUT / "desk_agent.png")
-    desk(GOLD, ceo=True).save(OUT / "desk_ceo.png")
+    desk_ceo_long().save(OUT / "desk_ceo.png")
     chair().save(OUT / "chair.png")
+    chair_ceo_long().save(OUT / "chair_ceo.png")
     table_meeting().save(OUT / "table_meeting.png")
     whiteboard().save(OUT / "board_whiteboard.png")
     coffee_machine().save(OUT / "machine_coffee.png")
@@ -218,7 +244,7 @@ def main():
     plant(True).save(OUT / "plant_b.png")
     sofa_small().save(OUT / "sofa_small.png")
     sofa_long().save(OUT / "sofa_long.png")
-    print(f"generated 12 furniture/props -> {OUT}")
+    print(f"generated 13 furniture/props -> {OUT}")
 
 
 if __name__ == "__main__":

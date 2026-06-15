@@ -34,8 +34,8 @@ var _wall_w: Texture2D = preload("res://assets/sprites/furniture/wall_w.png")
 const FURN_DIR := "res://assets/sprites/furniture/"
 const FURNITURE := [
 	# EXEC SUITE (0,0,6,5) — โต๊ะ CEO โทนทอง + เก้าอี้ + ต้นไม้ประดับ
-	{"f": "desk_ceo.png",         "c": Vector2i(3, 2)},
-	{"f": "chair.png",            "c": Vector2i(2, 2)},
+	{"f": "desk_ceo.png",         "c": Vector2i(3, 2)},   # ยาว 2 บล็อค คลุม 3,2 3,3
+	{"f": "chair_ceo.png",        "c": Vector2i(2, 2)},   # ยาว 2 บล็อค คลุม 2,2 2,3
 	{"f": "plant_a.png",          "c": Vector2i(1, 4)},
 	{"f": "plant_b.png",          "c": Vector2i(5, 1)},
 	# OPS FLOOR (6,0,7,7) — โต๊ะทำงานตรงจุดที่ agent นั่ง (DESK_SPOTS)
@@ -74,7 +74,9 @@ const FURNITURE := [
 # ค่ามาจาก base ของ box()/slab() ใน gen_furniture.py = (cx, by - bh/2)
 # board_whiteboard ไม่อยู่ที่นี่ — เป็นของแขวนผนัง (ใช้ cell + raise แทน)
 const FC := {
-	"desk_agent.png": Vector2(32, 44), "desk_ceo.png": Vector2(32, 44),
+	"desk_agent.png": Vector2(32, 44),
+	# CEO desk/chair ยาว 2 บล็อค (แกน +y) → fc = กลางฐาน "tile หลัง" (gy แรก) → c=cell หลัง คลุม c..c+(0,1)
+	"desk_ceo.png": Vector2(80, 56), "chair_ceo.png": Vector2(76, 52),
 	"chair.png": Vector2(16, 30), "machine_coffee.png": Vector2(16, 38),
 	"rack_server.png": Vector2(24, 82), "bed_bunk.png": Vector2(32, 60),
 	"plant_a.png": Vector2(16, 40), "plant_b.png": Vector2(16, 40),
