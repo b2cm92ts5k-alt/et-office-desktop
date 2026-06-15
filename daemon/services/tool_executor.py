@@ -39,6 +39,11 @@ TOOLS_SPEC = {
     "gh_create_issue":  {"args": ["title", "body"],    "desc": "สร้าง issue/Task ใหม่ใน GitHub repo"},
     "gh_comment_issue": {"args": ["number", "body"],   "desc": "คอมเมนต์/อัปเดต issue ตามเลข"},
     "gh_close_issue":   {"args": ["number"],           "desc": "ปิด issue ตามเลข"},
+    # git (M9-5) — รันใน workspace, push ขึ้น remote ที่ตั้งไว้, ทุก action ผ่าน permission gate
+    "git_status": {"args": [],          "desc": "ดูสถานะ git ใน workspace (branch + ไฟล์ที่เปลี่ยน)"},
+    "git_diff":   {"args": [],          "desc": "ดูสรุปการเปลี่ยนแปลง (git diff --stat)"},
+    "git_commit": {"args": ["message"], "desc": "git add -A แล้ว commit ใน workspace"},
+    "git_push":   {"args": [],          "desc": "git push ขึ้น remote ที่ตั้งไว้"},
 }
 
 
@@ -123,6 +128,13 @@ def _execute_github(tool: str, args: dict) -> str:
         return f"github tool ล้มเหลว: {exc}"
 
 
+def _git(git_args: list[str], root: Path) -> str:
+    """รัน git ใน workspace (M9-5) — คืน stdout+stderr รวม (push ใช้ credential ของเครื่อง)"""
+    r = subprocess.run(["git", *git_args], cwd=root, capture_output=True, timeout=PS_TIMEOUT_SEC)
+    out = (r.stdout.decode("utf-8", errors="replace") + r.stderr.decode("utf-8", errors="replace")).strip()
+    return _clip(out)
+
+
 def execute(tool: str, args: dict) -> str:
     """รัน tool หนึ่งครั้ง — เรียกหลังผ่าน permission gate แล้วเท่านั้น"""
     if tool.startswith("gh_"):
@@ -195,6 +207,22 @@ def execute(tool: str, args: dict) -> str:
                 body = resp.read(FETCH_CAP_BYTES)
             return _clip(body.decode("utf-8", errors="replace"))
 
+        if tool == "git_status":
+            return _git(["status", "--short", "--branch"], root) or "(working tree สะอาด)"
+
+        if tool == "git_diff":
+            return _git(["diff", "--stat"], root) or "(ไม่มีการเปลี่ยนแปลง)"
+
+        if tool == "git_commit":
+            msg = str(args.get("message", "")).strip()
+            if not msg:
+                return "ต้องมี message"
+            _git(["add", "-A"], root)
+            return _git(["commit", "-m", msg], root)
+
+        if tool == "git_push":
+            return _git(["push"], root)
+
         return f"ไม่รู้จัก tool: {tool} (ที่มี: {', '.join(TOOLS_SPEC)})"
 
     except WorkspaceError:
@@ -224,6 +252,14 @@ def summarize(tool: str, args: dict) -> str:
         return f"ปิด GitHub issue #{args.get('number')}"
     if tool == "gh_list_issues":
         return f"ดู GitHub issues ({args.get('state', 'open')})"
+    if tool == "git_commit":
+        return f"git commit: {args.get('message')}"
+    if tool == "git_push":
+        return "git push ขึ้น remote"
+    if tool == "git_status":
+        return "ดู git status"
+    if tool == "git_diff":
+        return "ดู git diff"
     main_arg = args.get("path", args.get("url", ""))
     labels = {"list_dir": "ดูโฟลเดอร์", "read_file": "อ่านไฟล์",
               "mkdir": "สร้างโฟลเดอร์", "delete": "ลบ"}
