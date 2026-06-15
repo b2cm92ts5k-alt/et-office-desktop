@@ -80,13 +80,19 @@
 |---|---|---|---|
 | Desk + จอ | 64×64 | 7 (CEO 1 แบบพิเศษ) | จอเป็น layer แยกให้ hologram_screen.gd สลับ animation |
 | เก้าอี้ | 32×40 | 8 | แยกชิ้นจาก desk เพื่อ z-sort ตัวละครนั่ง |
-| โต๊ะประชุมกลม | 128×80 | 1 | กลาง meeting room |
-| Whiteboard hologram | 96×64 | 1 | frame ว่าง — เนื้อหา render runtime |
+| โต๊ะประชุม **ยาว 3 บล็อค** | 144×96 | 1 | dimetric slab 3×1 tile, กลาง meeting room (ไกด์ CEO มิ.ย.2026) |
+| Whiteboard hologram | 96×108 | 1 | **เอียง isometric แนบผนัง W** (shear 2:1 ลาดลงซ้าย) — frame ว่าง เนื้อหา render runtime |
 | Coffee machine | 32×48 | 1 | neon orange glow |
 | Server rack | 48×96 | 3 | LED แยก layer ให้กระพริบตาม LLM load |
 | Bunk bed | 64×80 | 2 | dorm |
-| ป้าย "ET OFFICE" | 160×48 | 1 | ตัวอักษร glow แยก layer สำหรับ flicker |
+| **Sofa ยาว 3 บล็อค** | 144×96 | 1 | dimetric slab 3×1 + พนักพิง, Cafe (เบาะ neon orange) |
+| **Sofa เล็ก 1 บล็อค** | 72×56 | 2 | dimetric 1×1 + พนักพิง, Cafe |
+| ป้าย "ET OFFICE" | 160×128 | 1 | **เอียง isometric แนบผนัง N** (shear 2:1 ลาดลงขวา) — glow แยก layer flicker |
 | ต้นไม้/ของตกแต่ง | 32×48 | 4-6 | เติมความมีชีวิต |
+
+> **Perspective ของที่ติดผนัง (มิ.ย.2026):** ป้าย ET OFFICE (ผนัง N) + whiteboard (ผนัง W) วาดเอียง
+> dimetric 2:1 ผ่าน `vshear()` ใน `gen_furniture.py` ให้ระนาบแนบกำแพง (ไม่ใช่ภาพแบนหันหน้าตรง) —
+> วางใน `$World` layer เดียวกับผนัง (y-sort) แล้วยกขึ้นเหนือสันกำแพงด้วย raise/offset
 
 ## 5. FX Flipbooks (A-5)
 
@@ -102,7 +108,10 @@ godot/assets/sprites/
 ├── furniture/  tile_floor_a.png  tile_floor_b.png  wall_n.png  wall_w.png
 │              desk_agent.png  desk_ceo.png  chair.png  table_meeting.png
 │              rack_server.png  bed_bunk.png  machine_coffee.png  sign_etoffice.png
-└── fx/         fx_done.png  fx_error.png  fx_proposal.png  fx_working.png  fx_zzz.png
+│              board_whiteboard.png  plant_a.png  plant_b.png  sofa_long.png  sofa_small.png
+├── fx/         fx_done.png  fx_error.png  fx_proposal.png  fx_working.png  fx_zzz.png
+│              holo_frame_9patch.png  holo_scanline.png  bubble_9patch.png
+└── sounds/     office_hum.wav  keyboard.wav  server_fan.wav
 ```
 
 - ชื่อไฟล์: `snake_case`, ภาษาอังกฤษ, มี prefix ตามชนิด (`char_`, `tile_`, `fx_`)

@@ -28,6 +28,60 @@ var _floor_mat: ShaderMaterial  # แชร์ตัวเดียวทุก 
 var _wall_n: Texture2D = preload("res://assets/sprites/furniture/wall_n.png")
 var _wall_w: Texture2D = preload("res://assets/sprites/furniture/wall_w.png")
 
+# เฟอร์นิเจอร์/props (A-3) — วางตาม zone ให้ "ถูกที่และเหมาะสม"
+# base ของทุกชิ้นแตะ ground line (gts ของ cell) = เท้า agent → y-sort ตรงกัน
+# โต๊ะ OPS วางตรง DESK_SPOTS / เตียงตรง dorm spots (agent_manager.gd) → agent นั่ง/นอนทับพอดี
+const FURN_DIR := "res://assets/sprites/furniture/"
+const FURNITURE := [
+	# EXEC SUITE (0,0,6,5) — โต๊ะ CEO โทนทอง + เก้าอี้ + ต้นไม้ประดับ
+	{"f": "desk_ceo.png",         "c": Vector2i(3, 2)},
+	{"f": "chair.png",            "c": Vector2i(2, 2)},
+	{"f": "plant_a.png",          "c": Vector2i(1, 4)},
+	{"f": "plant_b.png",          "c": Vector2i(5, 1)},
+	# OPS FLOOR (6,0,7,7) — โต๊ะทำงานตรงจุดที่ agent นั่ง (DESK_SPOTS)
+	{"f": "desk_agent.png",       "c": Vector2i(7, 1)},
+	{"f": "desk_agent.png",       "c": Vector2i(9, 1)},
+	{"f": "desk_agent.png",       "c": Vector2i(11, 1)},
+	{"f": "desk_agent.png",       "c": Vector2i(7, 3)},
+	{"f": "desk_agent.png",       "c": Vector2i(9, 3)},
+	{"f": "desk_agent.png",       "c": Vector2i(11, 3)},
+	{"f": "desk_agent.png",       "c": Vector2i(7, 5)},
+	{"f": "desk_agent.png",       "c": Vector2i(9, 5)},
+	{"f": "desk_agent.png",       "c": Vector2i(11, 5)},
+	# SERVER (13,0,5,5) — แร็คเรียงชิดผนังหลัง
+	{"f": "rack_server.png",      "c": Vector2i(14, 1)},
+	{"f": "rack_server.png",      "c": Vector2i(16, 1)},
+	{"f": "rack_server.png",      "c": Vector2i(15, 3)},
+	# MEETING (0,5,6,7) — โต๊ะยาว 3 บล็อค (agent ล้อม) + whiteboard hologram แนบผนัง W (ยกขึ้นกำแพง)
+	{"f": "table_meeting.png",    "c": Vector2i(3, 8), "fc": Vector2(72, 55)},  # คลุม 3,7 3,8 3,9
+	{"f": "board_whiteboard.png", "c": Vector2i(0, 8), "fc": Vector2(30, 40), "r": 40.0},
+	{"f": "plant_a.png",          "c": Vector2i(1, 11)},
+	# CAFE (6,7,7,5) — โซฟายาว 3 บล็อค + โซฟาเล็ก ×2 + เครื่องกาแฟ + ต้นไม้
+	{"f": "machine_coffee.png",   "c": Vector2i(6, 7)},
+	{"f": "sofa_long.png",        "c": Vector2i(9, 8), "fc": Vector2(70, 58)},  # คลุม 8,8 9,8 10,8
+	{"f": "sofa_small.png",       "c": Vector2i(7, 9), "fc": Vector2(36, 32)},
+	{"f": "sofa_small.png",       "c": Vector2i(11, 9), "fc": Vector2(36, 32)},
+	{"f": "plant_b.png",          "c": Vector2i(12, 11)},
+	# DORM (13,5,5,7) — เตียงสองชั้นตรงจุดนอน (dorm spots) → agent หลับบนเตียง
+	{"f": "bed_bunk.png",         "c": Vector2i(14, 7)},
+	{"f": "bed_bunk.png",         "c": Vector2i(16, 8)},
+	{"f": "bed_bunk.png",         "c": Vector2i(14, 9)},
+	{"f": "bed_bunk.png",         "c": Vector2i(16, 10)},
+	{"f": "plant_a.png",          "c": Vector2i(17, 6)},
+]
+
+# footprint base-center (px) ต่อชนิด sprite → จัดให้ "ฐานแตะพื้น" ตรง cell (ไม่ลอย)
+# ค่ามาจาก base ของ box()/slab() ใน gen_furniture.py = (cx, by - bh/2)
+# board_whiteboard ไม่อยู่ที่นี่ — เป็นของแขวนผนัง (ใช้ cell + raise แทน)
+const FC := {
+	"desk_agent.png": Vector2(32, 44), "desk_ceo.png": Vector2(32, 44),
+	"chair.png": Vector2(16, 30), "machine_coffee.png": Vector2(16, 38),
+	"rack_server.png": Vector2(24, 82), "bed_bunk.png": Vector2(32, 60),
+	"plant_a.png": Vector2(16, 40), "plant_b.png": Vector2(16, 40),
+	"table_meeting.png": Vector2(72, 55), "sofa_long.png": Vector2(70, 58),
+	"sofa_small.png": Vector2(36, 32),
+}
+
 @onready var _floor: Node2D = $Floor
 @onready var _world: Node2D = $World
 
@@ -35,8 +89,24 @@ var _wall_w: Texture2D = preload("res://assets/sprites/furniture/wall_w.png")
 func _ready() -> void:
 	_build_floor()
 	_build_walls()
+	_build_furniture()
 	_build_zone_labels()
-	add_child(NeonSign.new())  # ป้าย ET OFFICE บนผนัง (M2-12) — child ท้ายสุด วาดทับผนัง
+	if "--grid" in OS.get_cmdline_user_args():
+		_build_grid_labels()   # ดีบัก: โชว์เลข (gx,gy) ทุก tile — รัน dev-godot.cmd --grid
+	# ป้าย ET OFFICE — เข้า World layer เดียวกับผนัง (y-sort) วางบนผนัง N (ขวา) เหนือกำแพง (มิ.ย.2026)
+	_world.add_child(NeonSign.new())
+
+
+func _build_grid_labels() -> void:
+	# โชว์พิกัด (gx,gy) กลางทุก tile ไว้หา cell ที่จะใส่ใน FURNITURE / SIGN_GRID
+	for gy in GRID_H:
+		for gx in GRID_W:
+			var l := Label.new()
+			l.text = "%d,%d" % [gx, gy]
+			l.add_theme_font_size_override("font_size", 7)
+			l.add_theme_color_override("font_color", Color(1, 1, 1, 0.55))
+			l.position = Iso.grid_to_screen(Vector2i(gx, gy)) - Vector2(9, 4)
+			_floor.add_child(l)
 
 
 func _build_floor() -> void:
@@ -62,9 +132,37 @@ func _zone_tint(grid: Vector2i) -> Color:
 func _build_walls() -> void:
 	# ผนังด้านหลังสองระนาบ (ขอบบนซ้าย gx=0 และขอบบนขวา gy=0)
 	for gy in GRID_H:
-		_add_wall(_wall_w, Vector2i(0, gy))
+		_add_wall(_wall_n, Vector2i(0, gy))
 	for gx in GRID_W:
-		_add_wall(_wall_n, Vector2i(gx, 0))
+		_add_wall(_wall_w, Vector2i(gx, 0))
+
+
+func _build_furniture() -> void:
+	for item: Dictionary in FURNITURE:
+		var tex: Texture2D = load(FURN_DIR + str(item["f"]))
+		if tex == null:
+			push_warning("furniture missing: " + str(item["f"]))
+			continue
+		var s := Sprite2D.new()
+		s.texture = tex
+		s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		# sort key = position.y = ground line ของ cell (เท่ากับเท้า agent ที่ place_at)
+		# offset ดันรูปขึ้นครึ่งสูง → ฐาน sprite แตะพื้น tile พอดี (y-sort ตรง)
+		# "r" = ยกเพิ่ม (ของแขวนผนัง เช่น whiteboard) — sort key คงที่ ภาพลอยขึ้น
+		var raise: float = item.get("r", 0.0)
+		s.position = Iso.grid_to_screen(item["c"] as Vector2i)
+		# "fc" = footprint base-center (px ใน sprite) → จัดให้จุดนี้ตรงกลาง cell "c" เป๊ะ
+		#        (ของยาวหลาย tile: c = cell กลางของช่วงที่คลุม) — sort key = ground line ของ c
+		# ไม่มี fc = ของ 1 tile แบบเดิม (ฐานแตะพื้น จัดกลางแนวนอน)
+		var fcv: Variant = item.get("fc", FC.get(str(item["f"])))
+		if fcv != null:
+			var fc: Vector2 = fcv
+			s.offset = Vector2(tex.get_width() / 2.0 - fc.x,
+				tex.get_height() / 2.0 - fc.y - raise)
+		else:
+			s.offset = Vector2(0, -tex.get_height() / 2.0 - raise)
+		s.y_sort_enabled = true
+		_world.add_child(s)
 
 
 func _add_wall(tex: Texture2D, grid: Vector2i) -> void:

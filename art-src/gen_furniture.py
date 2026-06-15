@@ -47,6 +47,33 @@ def neon_top_edge(d, top_verts, color):
     d.line([tN, tE], fill=color, width=1)
 
 
+def vshear(img, slope=0.5, direction="right"):
+    """เฉือนแนวตั้งให้ของแบน (ป้าย/whiteboard) ดูแนบระนาบกำแพง dimetric 2:1 (slope 0.5)
+    direction='right' = ขอบขวาลง → แนบผนัง N (ลาดลงขวา)
+    direction='left'  = ขอบซ้ายลง → แนบผนัง W (ลาดลงซ้าย)"""
+    w, h = img.size
+    extra = int(round(slope * (w - 1)))
+    if direction == "right":
+        coeffs = (1, 0, 0, -slope, 1, 0)               # คอลัมน์ x เลื่อนลง slope*x
+    else:
+        coeffs = (1, 0, 0, slope, 1, -slope * (w - 1))  # mirror — คอลัมน์ซ้ายลง
+    return img.transform((w, h + extra), Image.AFFINE, coeffs, resample=Image.NEAREST)
+
+
+def slab(d, ox, oy, lx, ly, h, top, left, right, edge=BORDER):
+    """แท่ง dimetric ยาว lx×ly tile (1 tile = 64×32) สูง h — (ox,oy)=จอของมุม grid (0,0)
+    คืน vertices หน้าบนไว้วาง accent (เหมือน box แต่ footprint เป็น parallelogram)"""
+    def g(gx, gy):
+        return (ox + (gx - gy) * 32, oy + (gx + gy) * 16)
+    bN, bE, bS, bW = g(0, 0), g(lx, 0), g(lx, ly), g(0, ly)
+    tN = (bN[0], bN[1] - h); tE = (bE[0], bE[1] - h)
+    tS = (bS[0], bS[1] - h); tW = (bW[0], bW[1] - h)
+    d.polygon([bW, bS, tS, tW], fill=left, outline=edge)   # หน้าซ้าย-หน้า
+    d.polygon([bS, bE, tE, tS], fill=right, outline=edge)  # หน้าขวา-หน้า
+    d.polygon([tN, tE, tS, tW], fill=top, outline=edge)    # หน้าบน
+    return (tN, tE, tS, tW)
+
+
 def desk(accent=CYAN, ceo=False):
     img, d = _canvas(64, 64)
     cx, by = 32, 58
@@ -70,23 +97,35 @@ def chair(accent=CYAN):
 
 
 def table_meeting():
-    img, d = _canvas(128, 80)
-    top = box(d, 64, 74, 118, 56, 14, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    """โต๊ะประชุมยาว 3 บล็อค (dimetric) — ยาวตามแกน +y (ลงซ้าย/ขึ้นขวา) ตามเส้นชมพูที่ CEO ไกด์
+    (มิ.ย.2026 รอบ 2: รอบแรกวาดยาวแกน +x ลงขวา = กลับด้าน → แก้เป็น lx=1,ly=3)"""
+    img, d = _canvas(144, 96)
+    # footprint (0,0)-(1,3): ยาวแกน +y → ox=104,oy=23 ให้กึ่งกลาง canvas
+    top = slab(d, 104, 23, 1, 3, 14, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
     neon_top_edge(d, top, PINK)
+    # เส้น hologram กลางโต๊ะ ตามแนวยาว (กลางปลายสั้นทั้งสองด้าน)
+    tN, tE, tS, tW = top
+    m0 = ((tN[0] + tE[0]) / 2, (tN[1] + tE[1]) / 2)
+    m1 = ((tW[0] + tS[0]) / 2, (tW[1] + tS[1]) / 2)
+    d.line([m0, m1], fill=PINK[:3] + (90,), width=1)
     return img
 
 
 def whiteboard():
-    img, d = _canvas(96, 64)
-    cx, by = 48, 60
-    # ขาตั้ง
-    box(d, cx, by, 40, 14, 6, PANEL_DARK, (10, 7, 22, 255), (8, 6, 16, 255))
-    # แผ่นกระดาน (frame ว่าง — เนื้อหา render runtime)
-    d.rectangle([cx - 34, by - 52, cx + 34, by - 8], fill=(8, 10, 24, 230), outline=CYAN)
-    d.rectangle([cx - 34, by - 52, cx + 34, by - 8], outline=CYAN)
-    d.line([cx - 28, by - 44, cx + 10, by - 44], fill=(0, 229, 255, 120), width=1)
-    d.line([cx - 28, by - 38, cx + 24, by - 38], fill=(0, 229, 255, 90), width=1)
-    return img
+    """Whiteboard hologram แนบผนัง W (เอียง isometric) — frame ว่าง เนื้อหา render runtime
+    (CEO ไกด์ มิ.ย.2026: วาดใหม่ให้แนบกำแพงในกรอบฟ้า ไม่ใช่ตั้งพื้น)"""
+    bw, bh = 96, 60
+    flat = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(flat)
+    fd.rectangle([0, 0, bw - 1, bh - 1], fill=(8, 10, 24, 230), outline=CYAN)
+    fd.rectangle([3, 3, bw - 4, bh - 4], outline=(0, 229, 255, 90))
+    for i, (x2, a) in enumerate(((58, 130), (78, 100), (48, 80))):
+        y = 14 + i * 12
+        fd.line([10, y, x2, y], fill=(0, 229, 255, a), width=2)
+    # มุมยึดผนัง (corner bracket)
+    for cx, cy, dx in ((2, 2, 1), (bw - 3, 2, -1)):
+        fd.line([(cx, cy), (cx + dx * 5, cy)], fill=CYAN, width=1)
+    return vshear(flat, 0.5, "left")
 
 
 def coffee_machine():
@@ -133,6 +172,39 @@ def plant(tall=False):
     return img
 
 
+def _sofa_cushions(d, top, n):
+    """วางเบาะ ORANGE บนหน้าบนของโซฟา (top = vertices หน้าบน) แบ่ง n ที่นั่ง"""
+    tN, tE, tS, tW = top
+    for k in range(n):
+        a, b = k / n, (k + 1) / n
+        p1 = (tW[0] + (tS[0] - tW[0]) * a, tW[1] + (tS[1] - tW[1]) * a)
+        p2 = (tW[0] + (tS[0] - tW[0]) * b, tW[1] + (tS[1] - tW[1]) * b)
+        p3 = (tN[0] + (tE[0] - tN[0]) * b, tN[1] + (tE[1] - tN[1]) * b)
+        p4 = (tN[0] + (tE[0] - tN[0]) * a, tN[1] + (tE[1] - tN[1]) * a)
+        d.polygon([p1, p2, p3, p4], outline=ORANGE[:3] + (220,))
+
+
+def sofa_small():
+    """โซฟาเล็ก 1 บล็อค — ที่นั่ง + พนักพิง (Cafe)"""
+    img, d = _canvas(72, 56)
+    ox, oy = 36, 16
+    seat = slab(d, ox, oy, 1, 1, 10, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    _sofa_cushions(d, seat, 1)
+    # พนักพิงด้านหลัง (แนว grid x, ชิดขอบ N→E) เตี้ย ๆ
+    slab(d, ox, oy - 10, 1, 0, 14, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    return img
+
+
+def sofa_long():
+    """โซฟายาว 3 บล็อค — ที่นั่งยาว + พนักพิงยาว (Cafe)"""
+    img, d = _canvas(144, 96)
+    ox, oy = 38, 26
+    seat = slab(d, ox, oy, 3, 1, 10, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))
+    _sofa_cushions(d, seat, 3)
+    slab(d, ox, oy - 10, 3, 0, 14, PANEL_MID, PANEL_DARK, (10, 7, 22, 255))  # พนักพิงยาว
+    return img
+
+
 def main():
     desk(CYAN).save(OUT / "desk_agent.png")
     desk(GOLD, ceo=True).save(OUT / "desk_ceo.png")
@@ -144,7 +216,9 @@ def main():
     bunk_bed().save(OUT / "bed_bunk.png")
     plant(False).save(OUT / "plant_a.png")
     plant(True).save(OUT / "plant_b.png")
-    print(f"generated 10 furniture/props -> {OUT}")
+    sofa_small().save(OUT / "sofa_small.png")
+    sofa_long().save(OUT / "sofa_long.png")
+    print(f"generated 12 furniture/props -> {OUT}")
 
 
 if __name__ == "__main__":
