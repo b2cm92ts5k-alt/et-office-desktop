@@ -19,6 +19,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files
 
 ROOT = Path(SPECPATH).parent          # spec อยู่ใน installer/ → ROOT = repo
+ICON = str(ROOT / "art-src" / "icon.ico")   # A-8 (gen: art-src/gen_app_icon.py)
 
 daemon_datas = [
     (str(ROOT / "daemon" / "roles"), "daemon/roles"),
@@ -41,17 +42,16 @@ a_launcher = Analysis([str(ROOT / "shell" / "launcher.py")], pathex=[str(ROOT)])
 
 exe_daemon = EXE(
     PYZ(a_daemon.pure), a_daemon.scripts, [],
-    exclude_binaries=True, name="et-office-daemon", console=True,
+    exclude_binaries=True, name="et-office-daemon", console=True, icon=ICON,
 )
 exe_sidebar = EXE(
     PYZ(a_sidebar.pure), a_sidebar.scripts, [],
-    exclude_binaries=True, name="et-office-sidebar", console=False,
+    exclude_binaries=True, name="et-office-sidebar", console=False, icon=ICON,
 )
 exe_launcher = EXE(
     PYZ(a_launcher.pure), a_launcher.scripts, [],
-    exclude_binaries=True, name="ET-Office", console=True,
+    exclude_binaries=True, name="ET-Office", console=True, icon=ICON,
 )
-# TODO(A-8): ใส่ icon=str(ROOT / "art-src" / "icon.ico") ทั้ง 3 EXE เมื่อ art เสร็จ
 
 COLLECT(
     exe_daemon, a_daemon.binaries, a_daemon.datas,
