@@ -204,6 +204,11 @@ class Launcher:
         if not FROZEN and not VENV_PY.is_file():
             log(".venv ไม่พบ — ดู Quick Start ใน README.md")
             return 1
+        # M7-8 belt-and-suspenders: บังคับ Ollama โหลด local model ได้ตัวเดียว/ไม่ขนาน
+        # การันตีหลักมาจาก "ทุก agent ใช้ active tag เดียว" อยู่แล้ว — env นี้กันเคสตัวค้าง
+        # ตอนสลับ (มีผลเฉพาะถ้า Ollama ถูกสตาร์ตใน/สืบทอด environment นี้)
+        os.environ.setdefault("OLLAMA_MAX_LOADED_MODELS", "1")
+        os.environ.setdefault("OLLAMA_NUM_PARALLEL", "1")
         if not self.start_daemon():
             self.shutdown()
             return 1

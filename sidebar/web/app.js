@@ -489,10 +489,11 @@ async function loadModelCatalog() {
 function renderModelMini() {
   const mini = document.getElementById("model-mini-status");
   if (!mini || !modelCatalogData) return;
-  const app = (modelCatalogData.models || []).find(m => m.app_installed);
-  mini.textContent = app
-    ? `✓ ติดตั้งผ่านแอป: ${app.tag}`
-    : "ยังไม่ได้ติดตั้งเพิ่ม — qwen3 (default) ใช้ได้เลย";
+  const active = modelCatalogData.active_local_model || "qwen3 (default)";
+  const busy = modelCatalogData.team_busy
+    ? " · ⛔ ทีมกำลังทำงาน สลับไม่ได้ตอนนี้"
+    : "";
+  mini.textContent = `🟢 local ที่ใช้ร่วม: ${active} (agent ที่ตั้ง local ใช้ตัวนี้ทั้งหมด ครั้งละ 1 ตัว • agent ที่ใช้ cloud API ไม่เกี่ยว)${busy}`;
 }
 
 function renderModelCatalog() {
@@ -500,6 +501,7 @@ function renderModelCatalog() {
   if (!data) return;
   const installing = data.installing;
   const hasApp = data.models.some(m => m.app_installed);
+  const busy = !!data.team_busy;
   updateInstallBanner(installing, null, installing ? "กำลังติดตั้ง…" : null);
   const byCat = {};
   for (const m of data.models) (byCat[m.category] = byCat[m.category] || []).push(m);
@@ -507,34 +509,38 @@ function renderModelCatalog() {
   for (const cat of MC_ORDER) {
     if (!byCat[cat]) continue;
     html += `<div class="mc-cat">${MC_CAT[cat] || cat}</div>`;
-    for (const m of byCat[cat]) html += modelRow(m, installing, hasApp);
+    for (const m of byCat[cat]) html += modelRow(m, installing, hasApp, busy);
   }
   document.getElementById("model-catalog").innerHTML = html;
   renderModelMini();
 }
 
-function modelRow(m, installing, hasApp) {
+function modelRow(m, installing, hasApp, busy) {
   const rec = m.recommended ? '<span class="rec-badge">แนะนำ</span>' : "";
   const meta = `<span class="mc-meta">${m.size_gb}GB · ต้อง ${m.min_vram_gb}GB</span>`;
   let action;
   if (m.tag === installing) {
     action = '<span class="mc-state">กำลังลง…</span>';
   } else if (m.app_installed) {
-    action = pendingUninstall === m.tag
-      ? `<span class="mc-confirm">ลบ? <button class="neon-btn sm danger" onclick="doUninstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelUninstall()">ไม่</button></span>`
-      : `<button class="neon-btn sm danger" onclick="askUninstall('${m.tag}')">ลบ</button>`;
+    action = busy
+      ? '<span class="mc-state lock" title="ทีมกำลังทำงาน">⛔ ทีมทำงานอยู่</span>'
+      : (pendingUninstall === m.tag
+        ? `<span class="mc-confirm">ลบ → กลับไปใช้ qwen3 default? <button class="neon-btn sm danger" onclick="doUninstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelUninstall()">ไม่</button></span>`
+        : `<button class="neon-btn sm danger" onclick="askUninstall('${m.tag}')">ลบ</button>`);
   } else if (m.installed) {
     action = '<span class="mc-state ok">มีอยู่แล้ว</span>';
   } else if (m.locked) {
     action = '<span class="mc-state lock">VRAM ไม่พอ</span>';
   } else if (installing) {
     action = '<button class="neon-btn sm" disabled>รอคิว</button>';
+  } else if (busy) {
+    action = '<button class="neon-btn sm" disabled title="ทีมกำลังทำงาน — รอว่างก่อนสลับ">⛔ ทีมทำงานอยู่</button>';
   } else if (hasApp) {
-    action = '<button class="neon-btn sm" disabled title="ลงได้ครั้งละ 1 ตัว — ลบตัวเดิมก่อน">ติดตั้ง</button>';
+    action = '<button class="neon-btn sm" disabled title="ใช้ได้ครั้งละ 1 ตัว — ลบตัวเดิมก่อน">สลับมาใช้</button>';
   } else if (pendingInstall === m.tag) {
-    action = `<span class="mc-confirm">ลง ~${m.size_gb}GB? <button class="neon-btn sm" onclick="doInstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelInstall()">ไม่</button></span>`;
+    action = `<span class="mc-confirm">โหลด ~${m.size_gb}GB แล้วสลับ agent ที่ใช้ local มาตัวนี้ (cloud agent ไม่เปลี่ยน · แนะนำ restart · อย่าสลับตอนทีมทำงาน)? <button class="neon-btn sm" onclick="doInstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelInstall()">ไม่</button></span>`;
   } else {
-    action = `<button class="neon-btn sm" onclick="askInstall('${m.tag}')">ติดตั้ง</button>`;
+    action = `<button class="neon-btn sm" onclick="askInstall('${m.tag}')">สลับมาใช้</button>`;
   }
   return `<div class="mc-row ${m.locked ? "locked" : ""}">` +
     `<div class="mc-info"><div class="mc-name">${esc(m.name)} ${rec}</div>` +
@@ -802,7 +808,7 @@ async function setAtmosphere(mode) {
   }
 }
 
-/* ---------- available models (M7-6) — qwen3 base + local ที่ลง + cloud ที่มี key ---------- */
+/* ---------- available models (M7-6/M7-8) — local 1 ตัว (active) + cloud ทุกตัวที่มี key (เลือกต่าง provider ต่อ agent ได้) ---------- */
 
 let availableModels = null;
 
@@ -1048,7 +1054,8 @@ function handleEvent(ev) {
       break;
     case "model.install.done":
       updateInstallBanner(null);
-      feedLine("done", `✔ ติดตั้ง ${esc(d.tag)} เสร็จ — เลือกใช้ได้แล้วตอนสร้าง agent`);
+      feedLine("done", `✔ ติดตั้ง ${esc(d.tag)} เสร็จ — agent ที่ใช้ local สลับมาที่ ${esc(d.tag)} แล้ว (เลิกใช้ ${esc(d.prev || "qwen3 default")} · agent ที่ใช้ cloud API ไม่เปลี่ยน)`);
+      feedLine("ln", "↻ แนะนำ restart ET Office 1 ครั้งให้ model ใหม่โหลดสะอาด — และอย่าสลับ model ระหว่างทีมกำลังทำงานจริง");
       checkOllama();   // ลง model แรกแล้ว → เคลียร์ banner เตือนถ้า ollama พร้อม (M5-5)
       if (settingsOpen) loadModelCatalog();
       break;
@@ -1058,6 +1065,7 @@ function handleEvent(ev) {
       if (settingsOpen) loadModelCatalog();
       break;
     case "model.uninstall.done":
+      feedLine("done", `🗑 ลบ ${esc(d.tag)} แล้ว — agent ที่ใช้ local กลับไปใช้ ${esc(d.active || "qwen3 default")}`);
       if (settingsOpen) loadModelCatalog();
       break;
     case "qa.ping":

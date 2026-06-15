@@ -19,16 +19,25 @@ from ..adapters.llm_adapter import (
     DEFAULT_CLOUD_MODELS,
     ENV_KEY_MAP,
     VRAMDetector,
+    active_local_tag,
     ollama_delete,
     ollama_list_installed,
-    ollama_ps_running,
     ollama_pull_stream,
+    ollama_unload,
 )
+from ..services.agent_registry import registry
 from ..services.settings_store import settings_store
 from ..services.ws_manager import ws_manager
 
 router = APIRouter(prefix="/models", tags=["models"])
 _detector = VRAMDetector()
+
+# สถานะที่ถือว่า "ทีมกำลังทำงาน" — ห้ามสลับ local model ตอนนี้ (กัน crew ที่รันอยู่หลุดกลางคัน)
+_BUSY_STATUSES = {"working", "thinking", "collab"}
+
+
+def _team_busy() -> bool:
+    return any(a.status in _BUSY_STATUSES for a in registry.all())
 
 # install ทีละ 1 ตัวเท่านั้น (กันยิงซ้อน + กันเครื่องรับไม่ไหว)
 _install_lock = threading.Lock()
@@ -51,32 +60,34 @@ def catalog() -> dict:
     return {
         "vram_gb": vram["vram_gb"],
         "recommended_base": vram["recommended"],  # qwen3 base auto (M7-1)
+        "active_local_model": active_local_tag(), # tag เดียวที่ทุก agent ใช้จริง (M7-8)
         "installing": _installing_tag,            # tag ที่กำลังลง (None = ว่าง) — UI disable ปุ่ม + resume progress
+        "team_busy": _team_busy(),                # ทีมกำลังทำงาน → UI disable การสลับ
         "models": models,
     }
 
 
 @router.get("/available")
 def available() -> dict:
-    """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): qwen3 base เสมอ + local ที่ลง + cloud ที่มี key
+    """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): local ตัวเดียว (active) + cloud ที่มี key
     ใช้ร่วมกันทั้ง HIRE dialog, gear ของ agent, และ CEO onboarding (M8)
+
+    M7-8: local เหลือ "ตัวเดียว" = active_local_model เท่านั้น — ทุก agent ใช้ตัวเดียวกัน
+    จึงไม่มีทางเลือก local หลายตัวให้ผสมจน Ollama โหลดซ้อนกัน. อยากใช้ตัวอื่น = สลับ
+    active ผ่าน Model Manager (เด้งยกทีม). งานเฉพาะทางที่ต้องแยก → ใช้ cloud (มี API key)
     """
-    base = _detector.detect()["recommended"]
-    local = ollama_list_installed() or [base]  # ออฟไลน์/ยังไม่ pull → fallback base
-    opts: list[dict] = []
-    for tag in local:
-        is_base = tag == base
-        opts.append({
-            "provider": "ollama",
-            "model": tag,
-            "label": f"{tag} (local)" + (" • default" if is_base else ""),
-            "recommended": is_base,
-        })
+    active = active_local_tag()
+    opts: list[dict] = [{
+        "provider": "ollama",
+        "model": active,
+        "label": f"{active} (local • ใช้ร่วมทั้งทีม)",
+        "recommended": True,
+    }]
     for prov, env in ENV_KEY_MAP.items():
         if os.environ.get(env):  # มี API key เท่านั้นถึงโผล่ให้เลือก
             m = DEFAULT_CLOUD_MODELS[prov]
             opts.append({"provider": prov, "model": m, "label": f"☁ {prov} ({m})", "recommended": False})
-    return {"options": opts, "recommended_base": base}
+    return {"options": opts, "recommended_base": active}
 
 
 @router.post("/install")
@@ -91,8 +102,13 @@ async def install(req: InstallReq) -> dict:
         raise HTTPException(400, "ไม่รู้จัก model นี้ในแคตตาล็อก")
 
     vram = _detector.detect()["vram_gb"]
+    # resident ทีละ 1 ตัวเสมอ (active เด่ียว) → เช็ก VRAM ของตัวใหม่ตัวเดียวพอ ไม่ต้องบวก base
     if vram < entry["min_vram_gb"]:
         raise HTTPException(400, f"VRAM ไม่พอ: {entry['name']} ต้องการ ~{entry['min_vram_gb']}GB (เครื่องมี {vram}GB)")
+
+    # สลับ active = ทุก agent เด้งไปใช้ตัวใหม่ → ห้ามทำตอน crew กำลังรัน (จะหลุดกลางคัน)
+    if _team_busy():
+        raise HTTPException(409, "ทีมกำลังทำงานอยู่ — รอให้ทีมว่างก่อนค่อยสลับ local model")
 
     with _install_lock:
         if _installing_tag:
@@ -101,10 +117,7 @@ async def install(req: InstallReq) -> dict:
             raise HTTPException(400, f"{entry['name']} ติดตั้งไว้แล้ว")
         app_installed = list(settings_store.get("installed_models") or [])
         if app_installed:
-            raise HTTPException(400, f"ติดตั้งได้ครั้งละ 1 ตัว — uninstall {app_installed[0]} ก่อน")
-        running = [r for r in ollama_ps_running() if r]
-        if running:
-            raise HTTPException(400, "มี local model กำลังรันอยู่: " + ", ".join(running) + " — ปิด/รอให้ unload ก่อนติดตั้ง")
+            raise HTTPException(400, f"ใช้ local model เพิ่มได้ครั้งละ 1 ตัว — ลบ {app_installed[0]} ก่อน (จะกลับไปใช้ qwen3 default)")
         _installing_tag = tag  # จองคิวก่อนปล่อย lock
 
     loop = asyncio.get_running_loop()
@@ -123,11 +136,19 @@ async def uninstall(req: InstallReq) -> dict:
         raise HTTPException(400, "ลบได้เฉพาะ model ที่ติดตั้งผ่านแอปเท่านั้น")
     if _installing_tag:
         raise HTTPException(409, f"กำลังติดตั้ง {_installing_tag} อยู่ — รอให้เสร็จก่อน")
+    # ลบ active = ทุก agent เด้งกลับไป qwen3 default → ห้ามทำตอนทีมทำงาน
+    if _team_busy():
+        raise HTTPException(409, "ทีมกำลังทำงานอยู่ — รอให้ทีมว่างก่อนค่อยลบ/สลับ local model")
     if not ollama_delete(tag):
         raise HTTPException(502, f"ลบไม่สำเร็จ — Ollama อาจไม่ได้รันอยู่ ({tag})")
-    settings_store.update({"installed_models": [t for t in app_installed if t != tag]})
-    await ws_manager.broadcast({"type": "model.uninstall.done", "data": {"tag": tag}})
-    return {"removed": tag}
+    changes: dict = {"installed_models": [t for t in app_installed if t != tag]}
+    # ตัวที่ลบคือ active อยู่ → เคลียร์ active กลับไปใช้ qwen3 default (VRAMDetector)
+    if (settings_store.get("active_local_model") or "") == tag:
+        changes["active_local_model"] = ""
+    settings_store.update(changes)
+    new_active = active_local_tag()
+    await ws_manager.broadcast({"type": "model.uninstall.done", "data": {"tag": tag, "active": new_active}})
+    return {"removed": tag, "active": new_active}
 
 
 def _pull_worker(loop: asyncio.AbstractEventLoop, tag: str) -> None:
@@ -155,11 +176,17 @@ def _pull_worker(loop: asyncio.AbstractEventLoop, tag: str) -> None:
                 last_status = status
                 emit("model.install.progress", {"tag": tag, "status": status})
 
+        # สลับ active มาที่ตัวใหม่ → ทุก ollama agent เด้งมาใช้ตัวนี้ (chokepoint get_llm)
+        prev_active = active_local_tag()
         installed = list(settings_store.get("installed_models") or [])
         if tag not in installed:
             installed.append(tag)
-            settings_store.update({"installed_models": installed})
-        emit("model.install.done", {"tag": tag})
+        settings_store.update({"installed_models": installed, "active_local_model": tag})
+        # ปลดตัวเก่า (qwen3 default) ออกจาก VRAM ทันที — กัน resident 2 ตัวช่วงสลับ
+        if prev_active and prev_active != tag:
+            ollama_unload(prev_active)
+        emit("model.install.done", {"tag": tag, "active": tag, "prev": prev_active,
+                                     "restart_hint": True})
     except Exception as e:  # noqa: BLE001
         emit("model.install.error", {"tag": tag, "error": str(e)[:200]})
     finally:

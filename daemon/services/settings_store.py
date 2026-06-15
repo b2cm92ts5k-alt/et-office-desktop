@@ -16,6 +16,7 @@ DEFAULTS: dict = {
     "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
     "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
     "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว
+    "active_local_model": "",        # local tag เดียวที่ทุก ollama agent ใช้ (M7-8); "" = ใช้ VRAMDetector recommended — กันรัน 2 ตัวพร้อมกัน
     "onboarded": False,              # ผ่าน onboarding สร้าง CEO แล้วหรือยัง (M8)
     "github_login": "",              # username ที่ผูก GitHub token ไว้ (M9-3) — token เก็บใน .env
     "github_repo": "",               # repo เป้าหมายของทีม "owner/name" (M9-4)

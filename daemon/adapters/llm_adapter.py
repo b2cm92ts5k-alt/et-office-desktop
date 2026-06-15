@@ -31,11 +31,25 @@ class MissingAPIKeyError(Exception):
     pass
 
 
+def active_local_tag() -> str:
+    """local tag เดียวที่ทุก ollama agent ต้องใช้ (M7-8) — กันโหลด 2 ตัวพร้อมกัน
+
+    ที่มา: settings active_local_model (ผู้ใช้สลับผ่าน Model Manager) → ถ้าว่าง
+    fallback = VRAMDetector recommended (qwen3 base ตาม VRAM). เป็น single source
+    of truth: agent ตั้ง model อะไรไว้ก็ถูก coerce มาที่ตัวนี้ตอน get_llm.
+    import settings_store แบบ lazy กัน circular import (settings_store ไม่ดึง adapter).
+    """
+    from ..services.settings_store import settings_store
+    tag = (settings_store.get("active_local_model") or "").strip()
+    return tag or VRAMDetector().detect()["recommended"]
+
+
 def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
     """temperature ระบุได้สำหรับงานที่ต้อง deterministic (tool loop M6-9 ใช้ 0.2)"""
     extra = {} if temperature is None else {"temperature": temperature}
     if cfg.provider == "ollama":
-        return LLM(model=f"ollama/{cfg.model}", base_url=OLLAMA_BASE_URL, **extra)
+        # บังคับใช้ active tag เดียวเสมอ (ไม่สน cfg.model) — invariant กันรัน local 2 ตัวซ้อน (M7-8)
+        return LLM(model=f"ollama/{active_local_tag()}", base_url=OLLAMA_BASE_URL, **extra)
 
     env_var = ENV_KEY_MAP[cfg.provider]
     key = os.environ.get(env_var, "")
@@ -159,6 +173,25 @@ def ollama_delete(tag: str) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def ollama_unload(tag: str) -> bool:
+    """ปลด model ออกจาก VRAM ทันที (POST /api/generate keep_alive:0) — ใช้ตอนสลับ active
+    model (M7-8) ให้ตัวเก่าคืน VRAM ก่อนตัวใหม่โหลด ไม่ลบไฟล์บนดิสก์
+    """
+    import json
+    import urllib.request
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/generate",
+        data=json.dumps({"model": tag, "keep_alive": 0}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
             return r.status == 200
     except Exception:
         return False
