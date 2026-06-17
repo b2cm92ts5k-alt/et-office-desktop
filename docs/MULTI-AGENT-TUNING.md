@@ -169,6 +169,26 @@
 - ป้องกัน 8B หลุดทำ loop เรียก Claude ไม่จบ
 **ไฟล์ใหม่:** `daemon/services/cost_guard.py`
 
+### 5.4 Cloud key strategy — แนะนำ "1 Agent : 1 Key" สำหรับงานหนัก (M11-13, ทดสอบจริง 2026-06-17)
+
+**ข้อเท็จจริง:** 1 API key เรียกได้**หลาย model พร้อมกัน** (key ผูกกับ provider ไม่ผูกกับ model)
+— agent ตัวหนึ่งใช้ `gemini-2.5-flash` อีกตัวใช้ `gemini-2.5-flash-lite` บน key เดียวได้
+(พิสูจน์แล้ว: ยิง 2 งานพร้อมกัน key เดียว → 2.5-flash สำเร็จ). **ไม่ต้องเจน key เพิ่มเพื่อสลับ model**
+
+**แต่ rate limit คือของจริง:** free tier จำกัด request **ต่อ key/project** (req/นาที + req/วัน).
+ตอนทดสอบยิงรัว ๆ key เดียว → `gemini-2.5-pro` คืน **429 (Too Many Requests)** ทันที.
+ยิ่งหลาย agent แชร์ key เดียวและทำงานพร้อมกัน ยิ่งชน limit ง่าย
+
+**คำแนะนำ:**
+- **agent ที่ใช้บ่อย/หนัก → แยก API key คนละอัน (1 Agent : 1 Key)** เพื่อกระจายโควต้า ไม่ให้แย่ง rate limit กัน
+- agent เบา ๆ นาน ๆ ใช้ที → แชร์ key เดียวพอ
+- ต่าง provider (Claude/GPT) ต้องใช้ key ของเจ้านั้นอยู่แล้ว
+- งาน production จริง → ใช้ paid tier (limit สูงกว่ามาก) หรือแยก project/key
+
+**ข้อจำกัดปัจจุบัน (gap):** ระบบเก็บ key **1 อันต่อ provider** ใน `.env` (`GOOGLE_API_KEY` ฯลฯ)
+ใช้ร่วมกันทุก agent ของ provider นั้น → ยังทำ "1 Agent : 1 Key" ตรง ๆ ไม่ได้.
+ถ้าจะรองรับเต็มรูป ต้องทำ **per-agent API key store** (เก็บ key ต่อ agent แทนต่อ provider) = task ใหม่ในอนาคต
+
 ---
 
 ## 6. ลำดับแนะนำ (ถ้าเริ่มทำ)

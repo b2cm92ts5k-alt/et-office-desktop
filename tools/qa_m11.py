@@ -158,7 +158,7 @@ def main() -> None:
 
     # ---------- M11-13 Cloud model catalog ----------
     print("\n--- M11-13 Cloud model catalog ---")
-    check("gemini catalog = free tier", len(LA.cloud_models("gemini")) >= 4
+    check("gemini catalog = free tier", len(LA.cloud_models("gemini")) >= 3
           and all(m["tier"] == "free" for m in LA.cloud_models("gemini")))
     check("claude/openai = paid", all(m["tier"] == "paid" for m in LA.cloud_models("claude"))
           and len(LA.cloud_models("openai")) >= 5)

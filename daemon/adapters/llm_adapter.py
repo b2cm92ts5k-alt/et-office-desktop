@@ -98,12 +98,13 @@ SPECIALIST_PRESETS: list[dict] = [
 # หมายเหตุ: model id อ้างชื่อจากภาพ CEO (มิ.ย.2026) — gemini-2.5-flash ยืนยันใช้ได้จริง,
 # ตัวอื่นปรับ id ให้ตรง API ปัจจุบันได้ที่นี่ที่เดียว (CEO แก้ catalog ได้)
 CLOUD_CATALOG: dict[str, list[dict]] = {
+    # verified กับ Google key จริง (มิ.ย.2026): 2.5-flash / 2.5-flash-lite = OK,
+    # 2.5-pro = id ถูกแต่ free tier มัก 429 (rate limit). Gemini 3 (gemini-3-flash /
+    # gemini-3.1-flash-lite) คืน 404 — ยังไม่เปิด/ชื่อ id ต่าง → ตัดออก ใส่กลับเมื่อยืนยัน id จริง
     "gemini": [
-        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",         "tier": "free", "in": 0, "out": 0},
-        {"model": "gemini-3-flash",         "label": "Gemini 3 Flash",         "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro (อาจชน limit free tier)", "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",       "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
-        {"model": "gemini-3.1-flash-lite",  "label": "Gemini 3.1 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
     ],
     "claude": [
         {"model": "claude-opus-4-8",   "label": "Claude Opus 4.8",   "tier": "paid", "in": 5, "out": 25},
