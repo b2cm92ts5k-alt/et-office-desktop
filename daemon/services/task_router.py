@@ -341,7 +341,7 @@ class TaskRouter:
                 raw = str(llm.call(sent))
                 # cloud ไม่คาย usage → ประเมิน token เพื่อคิดค่า (M11-10) + เติม metrics (M11-5)
                 t_in, t_out = est_tokens(sent), est_tokens([{"content": raw}])
-                cost_guard.record(provider, t_in, t_out)
+                cost_guard.record(provider, agent_cfg.llm.model, t_in, t_out)
                 if metrics is not None:
                     metrics["model"] = agent_cfg.llm.model
                     metrics["provider"] = provider

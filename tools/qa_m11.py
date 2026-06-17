@@ -142,17 +142,29 @@ def main() -> None:
           ("cost_guard_enabled", "cost_daily_usd", "cost_hourly_usd")))
     check("est_tokens ~chars/4", est_tokens([{"content": "x" * 400}]) == 100)
     cg = CostGuard()
-    check("local cost = 0", cg.record("ollama", 1000, 1000) == 0.0)
-    cg.record("claude", 1_000_000, 1_000_000)
+    check("local cost = 0", cg.record("ollama", "qwen3:8b", 1000, 1000) == 0.0)
+    # opus 4.8 = $5 in + $25 out ต่อ 1M → 1M+1M = $30
+    usd = cg.record("claude", "claude-opus-4-8", 1_000_000, 1_000_000)
+    check("per-model price (opus 1M+1M = $30)", abs(usd - 30.0) < 1e-6)
     old_e, old_d = settings_store.get("cost_guard_enabled"), settings_store.get("cost_daily_usd")
     settings_store._values["cost_guard_enabled"] = True
     settings_store._values["cost_daily_usd"] = 5.0
     settings_store._values["cost_hourly_usd"] = 0.0
-    check("over_budget เมื่อ $12 > cap $5", cg.over_budget() is True)
+    check("over_budget เมื่อ $30 > cap $5", cg.over_budget() is True)
     settings_store._values["cost_guard_enabled"] = False
     check("ปิด guard → ไม่ over", cg.over_budget() is False)
     settings_store._values["cost_guard_enabled"] = old_e
     settings_store._values["cost_daily_usd"] = old_d
+
+    # ---------- M11-13 Cloud model catalog ----------
+    print("\n--- M11-13 Cloud model catalog ---")
+    check("gemini catalog = free tier", len(LA.cloud_models("gemini")) >= 4
+          and all(m["tier"] == "free" for m in LA.cloud_models("gemini")))
+    check("claude/openai = paid", all(m["tier"] == "paid" for m in LA.cloud_models("claude"))
+          and len(LA.cloud_models("openai")) >= 5)
+    check("cloud_price opus = (5,25)", LA.cloud_price("claude", "claude-opus-4-8") == (5.0, 25.0))
+    check("cloud_price gemini free = (0,0)", LA.cloud_price("gemini", "gemini-2.5-flash") == (0.0, 0.0))
+    check("cloud_price unknown → None", LA.cloud_price("openai", "ไม่มีจริง") is None)
 
     # ---------- M11-11 Per-agent memory ----------
     print("\n--- M11-11 Per-agent memory ---")

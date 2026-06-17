@@ -93,6 +93,50 @@ SPECIALIST_PRESETS: list[dict] = [
 ]
 
 
+# M11-13 (#141) — catalog cloud model ต่อ provider: 1 key เลือกได้หลายตัว (ไม่ฟิก)
+# tier: "free" (Google free tier) / "paid" (in/out = USD ต่อ 1M token) — ป้อน cost_guard per-model
+# หมายเหตุ: model id อ้างชื่อจากภาพ CEO (มิ.ย.2026) — gemini-2.5-flash ยืนยันใช้ได้จริง,
+# ตัวอื่นปรับ id ให้ตรง API ปัจจุบันได้ที่นี่ที่เดียว (CEO แก้ catalog ได้)
+CLOUD_CATALOG: dict[str, list[dict]] = {
+    "gemini": [
+        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",         "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-3-flash",         "label": "Gemini 3 Flash",         "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",       "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-3.1-flash-lite",  "label": "Gemini 3.1 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
+    ],
+    "claude": [
+        {"model": "claude-opus-4-8",   "label": "Claude Opus 4.8",   "tier": "paid", "in": 5, "out": 25},
+        {"model": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "paid", "in": 3, "out": 15},
+        {"model": "claude-haiku-4-5",  "label": "Claude Haiku 4.5",  "tier": "paid", "in": 1, "out": 5},
+    ],
+    "openai": [
+        {"model": "gpt-5.5",      "label": "GPT-5.5",      "tier": "paid", "in": 5,   "out": 30},
+        {"model": "gpt-5.5-pro",  "label": "GPT-5.5 Pro",  "tier": "paid", "in": 30,  "out": 180},
+        {"model": "gpt-5.4",      "label": "GPT-5.4",      "tier": "paid", "in": 2.5, "out": 15},
+        {"model": "gpt-5.4-mini", "label": "GPT-5.4 Mini", "tier": "paid", "in": 0.75, "out": 4.5},
+        {"model": "gpt-5.4-nano", "label": "GPT-5.4 Nano", "tier": "paid", "in": 0.2, "out": 1.25},
+        {"model": "o3",           "label": "o3",           "tier": "paid", "in": 2,   "out": 8},
+        {"model": "o3-mini",      "label": "o3-mini",      "tier": "paid", "in": 1,   "out": 4},
+        {"model": "o1",           "label": "o1",           "tier": "paid", "in": 15,  "out": 60},
+        {"model": "o1-pro",       "label": "o1-Pro",       "tier": "paid", "in": 150, "out": 180},
+    ],
+}
+
+
+def cloud_models(provider: str) -> list[dict]:
+    """รายชื่อ cloud model ของ provider (M11-13) — ว่าง = provider นั้นไม่มี catalog"""
+    return CLOUD_CATALOG.get(provider, [])
+
+
+def cloud_price(provider: str, model: str) -> tuple[float, float] | None:
+    """ราคา (in, out) USD/1M token ของ model จาก catalog — None ถ้าไม่อยู่ใน catalog (M11-13)"""
+    for m in CLOUD_CATALOG.get(provider, []):
+        if m["model"] == model:
+            return (float(m["in"]), float(m["out"]))
+    return None
+
+
 def specialist_for(role: str = "", keywords: list[str] | None = None) -> dict | None:
     """หา specialist cloud ที่เหมาะกับ role (M11-9) — คืน {provider, model, reason} หรือ None
 

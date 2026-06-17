@@ -34,10 +34,18 @@ class CostGuard:
         self._lock = threading.Lock()
         self._events: list[tuple[float, float]] = []  # (ts, usd)
 
-    def record(self, provider: str, tokens_in: int, tokens_out: int) -> float:
-        """บันทึกค่าใช้จ่าย 1 ครั้ง → คืน usd ของครั้งนั้น (local = 0)"""
-        price = PRICE_PER_MTOK.get(provider, 0.0)
-        usd = (tokens_in + tokens_out) / 1_000_000 * price
+    def record(self, provider: str, model: str, tokens_in: int, tokens_out: int) -> float:
+        """บันทึกค่าใช้จ่าย 1 ครั้ง → คืน usd (local = 0)
+
+        ใช้ราคา per-model จาก CLOUD_CATALOG ก่อน (M11-13) — แม่นกว่าเหมา per-provider;
+        ถ้า model ไม่อยู่ใน catalog ค่อย fallback เป็น flat PRICE_PER_MTOK[provider].
+        """
+        from ..adapters.llm_adapter import cloud_price
+        per = cloud_price(provider, model)
+        if per is not None:
+            usd = tokens_in / 1_000_000 * per[0] + tokens_out / 1_000_000 * per[1]
+        else:
+            usd = (tokens_in + tokens_out) / 1_000_000 * PRICE_PER_MTOK.get(provider, 0.0)
         if usd > 0:
             with self._lock:
                 now = time.time()

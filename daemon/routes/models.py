@@ -20,6 +20,7 @@ from ..adapters.llm_adapter import (
     ENV_KEY_MAP,
     VRAMDetector,
     active_local_tag,
+    cloud_models,
     ollama_delete,
     ollama_list_installed,
     ollama_pull_stream,
@@ -83,10 +84,19 @@ def available() -> dict:
         "label": f"{active} (local • ใช้ร่วมทั้งทีม)",
         "recommended": True,
     }]
+    # cloud: 1 key เลือกได้หลาย model จาก catalog (M11-13) + tag free / use-cost ใน label
     for prov, env in ENV_KEY_MAP.items():
-        if os.environ.get(env):  # มี API key เท่านั้นถึงโผล่ให้เลือก
-            m = DEFAULT_CLOUD_MODELS[prov]
-            opts.append({"provider": prov, "model": m, "label": f"☁ {prov} ({m})", "recommended": False})
+        if not os.environ.get(env):   # มี API key เท่านั้นถึงโผล่ให้เลือก
+            continue
+        cat = cloud_models(prov)
+        if cat:
+            for m in cat:
+                tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
+                opts.append({"provider": prov, "model": m["model"],
+                             "label": f"☁ {m['label']} · {tag}", "recommended": False})
+        else:  # provider ไม่มีใน catalog → fallback default เดิม
+            dm = DEFAULT_CLOUD_MODELS[prov]
+            opts.append({"provider": prov, "model": dm, "label": f"☁ {prov} ({dm})", "recommended": False})
     return {"options": opts, "recommended_base": active}
 
 
