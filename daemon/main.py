@@ -73,6 +73,15 @@ app.include_router(proposals.router)
 app.include_router(sprites.router)
 app.include_router(permissions.router)
 
+from fastapi import Response  # noqa: E402
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def _favicon() -> Response:
+    """กัน 404 สีแดงใน log — webview/บราวเซอร์ขอ favicon อัตโนมัติ (ไม่มีไอคอนก็ไม่เป็นไร)"""
+    return Response(status_code=204)
+
+
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # serve หน้า sidebar (same-origin — fetch/WS ไม่ติด CORS/file:// ของ webview)

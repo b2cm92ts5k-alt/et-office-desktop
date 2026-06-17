@@ -53,6 +53,14 @@ func _embed_as_wallpaper() -> void:
 
 	_hwnd = DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE, 0)
 	_debug("hwnd=%d" % _hwnd)
+
+	# M12-1: ย้าย window ไปจอหลักก่อน attach — กันเปิดผิดจอ/เห็น wallpaper หลายจอ
+	# (wallpaper.ps1 จะ reinforce อีกชั้นด้วยพิกัด relative-to-WorkerW)
+	var ps := DisplayServer.get_primary_screen()
+	DisplayServer.window_set_position(DisplayServer.screen_get_position(ps))
+	DisplayServer.window_set_size(DisplayServer.screen_get_size(ps))
+	_debug("placed on primary screen %d pos=%s size=%s" % [ps,
+		str(DisplayServer.screen_get_position(ps)), str(DisplayServer.screen_get_size(ps))])
 	var script_path := _wallpaper_script_path()
 	_debug("script_path=%s" % script_path)
 	if script_path.is_empty():
