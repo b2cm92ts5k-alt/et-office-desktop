@@ -39,3 +39,4 @@ Desktop.ini
 pyinstaller-build/
 daemon_qa*.log
 daemon/data/cloud_keys.json
+daemon/data/launcher_run.json

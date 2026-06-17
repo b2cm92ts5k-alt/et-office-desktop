@@ -105,9 +105,15 @@ if ($Attach -ne 0) {
     $prev = [ETWallpaper]::SetParent($child, $w)
     if ($prev -eq [IntPtr]::Zero) { Write-Output "FAIL: SetParent returned 0 (error $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"; exit 1 }
 
-    # หลัง SetParent พิกัดเป็น relative กับ WorkerW — จัดเต็มจอหลัก
+    # หลัง SetParent พิกัดเป็น relative กับ WorkerW ซึ่งครอบ virtual desktop ทุกจอ
+    # (0,0) = มุมซ้ายบนของ virtual desktop ไม่ใช่จอหลัก → ต้องชดเชย virtual origin
+    # ไม่งั้นจอ 2 ที่อยู่ซ้าย/บนทำให้ wallpaper ตกผิดจอ (M12-1)
     $b = Get-PrimaryBounds
-    [ETWallpaper]::MoveWindow($child, 0, 0, $b.Width, $b.Height, $true) | Out-Null
+    $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $relX = $b.X - $vs.X
+    $relY = $b.Y - $vs.Y
+    [ETWallpaper]::MoveWindow($child, $relX, $relY, $b.Width, $b.Height, $true) | Out-Null
+    Write-Output ("PLACED  : Display1(primary) rel=(" + $relX + "," + $relY + ") size=" + $b.Width + "x" + $b.Height)
 
     Write-Output ("ATTACHED: hwnd " + $child + " -> WorkerW " + $w + " (via " + [ETWallpaper]::FoundVia + ")")
     Write-Output ("VERIFY  : GetParent = " + [ETWallpaper]::GetParent($child))

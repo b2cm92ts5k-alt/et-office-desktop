@@ -149,6 +149,12 @@
         <label class="inline">cooldown ข้อเสนอ (นาที) <input id="soc-cooldown" type="number" min="0" step="5" class="num"></label>
         <button class="neon-btn" onclick="saveSocial()">SAVE</button>
       </div>
+
+      <h3>ระบบ (M12)</h3>
+      <div class="set-row">
+        <button class="neon-btn danger" onclick="shutdownSystem()">⏻ ปิด ET Office</button>
+      </div>
+      <div class="warn-note">ปิด daemon + wallpaper + sidebar ทั้งหมด (เปิดผ่าน launcher จะเก็บกวาดให้ครบ ไม่เหลือ process ค้าง) — หรือพิมพ์ <code>/exit</code> ใน terminal</div>
     </div>
   </section>
 </div>

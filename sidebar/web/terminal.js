@@ -110,6 +110,13 @@ async function submitTask() {
   const msg = input.value.trim();
   if (!msg) return;
   input.value = "";
+  // M12-2 — คำสั่งปิดระบบ (ไม่ส่งเป็น task): /exit /shutdown /quit
+  if (["/exit", "/shutdown", "/quit"].includes(msg.toLowerCase())) {
+    feedLine("route", "⏻ กำลังปิด ET Office (daemon + wallpaper + sidebar)…");
+    try { await fetch(BASE + "/system/shutdown", { method: "POST" }); }
+    catch { feedLine("error", "ส่งคำสั่งปิดไม่ได้ — daemon เปิดอยู่ไหม?"); }
+    return;
+  }
   // แนบ path ไฟล์ที่ลากใส่เข้า context ให้ agent อ่านต่อ (อยู่ใน workspace แล้ว)
   const note = attached.length
     ? `[ไฟล์แนบใน workspace: ${attached.map(a => a.rel).join(", ")}]\n`

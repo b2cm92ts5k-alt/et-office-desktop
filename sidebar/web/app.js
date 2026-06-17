@@ -394,6 +394,21 @@ async function saveReviewer() {
   } catch { feedLine("error", "ตั้ง reviewer ไม่สำเร็จ"); }
 }
 
+// M12-2 — ปิดระบบทั้งหมด (ยืนยัน 2 คลิกกันกดพลาด — pywebview ไม่พึ่ง confirm())
+let _shutdownArmed = false;
+async function shutdownSystem() {
+  if (!_shutdownArmed) {
+    _shutdownArmed = true;
+    feedLine("error", "⚠ กดปุ่ม ⏻ อีกครั้งภายใน 4 วิ เพื่อยืนยันปิด ET Office");
+    setTimeout(() => { _shutdownArmed = false; }, 4000);
+    return;
+  }
+  _shutdownArmed = false;
+  feedLine("route", "⏻ กำลังปิด ET Office (daemon + wallpaper + sidebar)…");
+  try { await fetch(BASE + "/system/shutdown", { method: "POST" }); }
+  catch { feedLine("error", "ส่งคำสั่งปิดไม่ได้ — daemon เปิดอยู่ไหม?"); }
+}
+
 async function loadSettings() {
   try {
     const vram = await (await fetch(BASE + "/system/vram")).json();

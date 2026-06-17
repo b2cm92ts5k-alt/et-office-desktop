@@ -44,6 +44,8 @@ DAEMON_HEALTH = "http://127.0.0.1:8797/health"
 GODOT_GLOB = "Godot_v*-stable_win64.exe"
 WM_CLOSE = 0x0010
 GODOT_CLOSE_GRACE_SEC = 12   # รอ detach + คืน wallpaper ก่อนยอม force
+RUNFILE = REPO / "daemon" / "data" / "launcher_run.json"   # M12-3: pid ของ session ปัจจุบัน
+APP_VERSION = "0.1"
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 user32 = ctypes.windll.user32
@@ -51,6 +53,27 @@ user32 = ctypes.windll.user32
 
 def log(msg: str) -> None:
     print(f"[ET OFFICE] {msg}", flush=True)
+
+
+def banner() -> None:
+    """M12-3 — header ทางการตอนเปิด"""
+    print(flush=True)
+    print("  ┌─────────────────────────────────────────────┐", flush=True)
+    print(f"  │   ET OFFICE — AI agent desktop   v{APP_VERSION:<10}│", flush=True)
+    print("  └─────────────────────────────────────────────┘", flush=True)
+
+
+def image_name(pid: int) -> str:
+    """ชื่อ exe ของ pid (lowercase) — '' ถ้าไม่ alive. ใช้กันฆ่า PID ที่ถูก recycle (M12-3)"""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True, timeout=5).stdout.decode("utf-8", "replace")
+        if f'"{pid}"' in out or f",{pid}," in out:
+            return out.strip().split('","', 1)[0].strip('"').lower()
+    except Exception:
+        pass
+    return ""
 
 
 def find_godot() -> Path | None:
@@ -110,6 +133,55 @@ class Launcher:
         self.daemon_owned = False     # daemon ที่รันอยู่ก่อนแล้วไม่ใช่ของเรา — ไม่ปิดให้
         self.godot: subprocess.Popen | None = None
         self.sidebar: subprocess.Popen | None = None
+
+    # --- orphan cleanup (M12-3) -----------------------------------------
+    def cleanup_orphans(self) -> None:
+        """เก็บกวาด process ค้างจาก session ก่อนที่ออกไม่สะอาด (อ่านจาก run-file)
+
+        ฆ่าเฉพาะ pid ใน run-file ที่ยัง alive และชื่อ exe ตรงที่คาด (กัน PID ถูก recycle
+        ไปฆ่า process อื่น). godot → WM_CLOSE detach wallpaper ก่อน แล้วค่อย force.
+        """
+        if not RUNFILE.exists():
+            return
+        try:
+            rec = json.loads(RUNFILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            rec = {}
+        want = {"godot": ("godot", "wallpaper"), "sidebar": ("python", "sidebar"),
+                "daemon": ("python", "daemon", "uvicorn")}
+        cleaned = 0
+        for name in ("godot", "sidebar", "daemon"):   # godot ก่อน (คืน wallpaper)
+            pid = rec.get(name)
+            if not isinstance(pid, int):
+                continue
+            img = image_name(pid)
+            if not img or not any(s in img for s in want[name]):
+                continue   # ดับไปแล้ว หรือ PID ถูก recycle เป็น process อื่น → ไม่แตะ
+            log(f"พบ orphan {name} ค้างจากรอบก่อน (pid {pid}, {img}) → เก็บกวาด")
+            if name == "godot":
+                post_wm_close(pid)
+                deadline = time.time() + GODOT_CLOSE_GRACE_SEC
+                while time.time() < deadline and image_name(pid):
+                    time.sleep(0.4)
+            subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"], capture_output=True)
+            cleaned += 1
+        if cleaned:
+            log(f"เก็บกวาด orphan {cleaned} ตัวเรียบร้อย")
+        RUNFILE.unlink(missing_ok=True)
+
+    def write_runfile(self) -> None:
+        rec: dict[str, int] = {}
+        if self.daemon_owned and self.daemon is not None:
+            rec["daemon"] = self.daemon.pid
+        if self.godot is not None:
+            rec["godot"] = self.godot.pid
+        if self.sidebar is not None:
+            rec["sidebar"] = self.sidebar.pid
+        try:
+            RUNFILE.parent.mkdir(parents=True, exist_ok=True)
+            RUNFILE.write_text(json.dumps(rec), encoding="utf-8")
+        except OSError:
+            pass
 
     # --- start -----------------------------------------------------------
     def start_daemon(self) -> bool:
@@ -197,6 +269,7 @@ class Launcher:
                 self.daemon.wait(timeout=8)
             except (subprocess.TimeoutExpired, OSError):
                 self.daemon.terminate()
+        RUNFILE.unlink(missing_ok=True)   # M12-3 — ออกสะอาด → ไม่มี orphan ค้าง
         log("ปิดครบทุก process แล้ว")
 
     # --- main -------------------------------------------------------------
@@ -204,6 +277,8 @@ class Launcher:
         if not FROZEN and not VENV_PY.is_file():
             log(".venv ไม่พบ — ดู Quick Start ใน README.md")
             return 1
+        banner()                 # M12-3
+        self.cleanup_orphans()   # M12-3 — เก็บกวาด process ค้างจากรอบก่อนก่อนเริ่มใหม่
         # M7-8 belt-and-suspenders: บังคับ Ollama โหลด local model ได้ตัวเดียว/ไม่ขนาน
         # การันตีหลักมาจาก "ทุก agent ใช้ active tag เดียว" อยู่แล้ว — env นี้กันเคสตัวค้าง
         # ตอนสลับ (มีผลเฉพาะถ้า Ollama ถูกสตาร์ตใน/สืบทอด environment นี้)
@@ -218,7 +293,8 @@ class Launcher:
                 return 1
             if not self.args.no_sidebar:
                 self.start_sidebar()
-            log("พร้อมทำงาน — ปิดทั้งหมด: Ctrl+C ที่นี่ / ออกจาก tray ET / ปิดหน้าต่าง Godot")
+            self.write_runfile()   # M12-3 — บันทึก pid เผื่อรอบหน้าต้องเก็บกวาด
+            log("พร้อมทำงาน — ปิดทั้งหมด: ปุ่ม ⏻/พิมพ์ /exit ใน sidebar · Ctrl+C ที่นี่ · tray ET · ปิดหน้าต่าง Godot")
             first = self.watch()
             log(f"{first} จบการทำงาน → ปิดที่เหลือทั้งหมด")
         except KeyboardInterrupt:
