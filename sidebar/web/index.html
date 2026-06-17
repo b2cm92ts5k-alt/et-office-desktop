@@ -108,11 +108,13 @@
           <option value="gemini">Gemini</option>
           <option value="openai">OpenAI</option>
         </select>
+        <input id="key-label" type="text" placeholder="ชื่อเล่น เช่น งานหลัก" autocomplete="off" style="max-width:110px">
         <input id="key-value" type="password" placeholder="วาง API key…" autocomplete="off">
-        <button class="neon-btn" onclick="saveKey()">SAVE</button>
+        <button class="neon-btn" onclick="saveKey()">ADD</button>
       </div>
       <div id="key-status" class="set-row"></div>
-      <div class="warn-note">1 key ใช้ได้หลาย model/หลาย agent พร้อมกัน (แชร์ได้สบาย) 💡 ออปชัน: ถ้า agent ตัวไหนใช้หนักจะแยก key ให้ก็ได้ ลดโอกาสชน rate limit ของ free tier (ไม่บังคับ)</div>
+      <div id="keys-list" class="set-row"></div>
+      <div class="warn-note">ใส่ได้หลาย key ต่อ provider (เช่น Gemini 2 อัน) — เลือกว่า agent ไหนใช้ <b>key/model</b> ไหน ที่ ⚙ ของ agent · 1 key ใช้หลาย model/agent พร้อมกันได้ 💡 ออปชัน: agent ที่ใช้หนักแยก key กัน rate limit (ไม่บังคับ)</div>
 
       <h3>LOCAL MODELS — ติดตั้งเพิ่ม (M7)</h3>
       <div id="model-install-banner" class="model-banner hidden">
@@ -257,6 +259,7 @@
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
     <label>Model AI <select id="m-model"></select></label>
+    <label id="m-key-row" class="hidden">Key (M11-14) <select id="m-key"></select></label>
     <div id="m-specialist" class="hidden"></div>
     <div class="warn-note">เพิ่ม model อื่นได้ที่ SETTINGS — Local Models (ลง local เพิ่ม) หรือ API Keys (cloud)</div>
 

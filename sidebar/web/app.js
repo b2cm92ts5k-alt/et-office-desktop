@@ -399,8 +399,7 @@ async function loadSettings() {
     const vram = await (await fetch(BASE + "/system/vram")).json();
     document.getElementById("vram-info").textContent =
       `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
-    keyStatus = await (await fetch(BASE + "/settings/apikey")).json();
-    renderKeyStatus();
+    await loadKeys();   // M11-14 — โหลด key list (default .env + store)
     renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
@@ -706,22 +705,48 @@ function renderKeyStatus() {
     }).join(" ");
 }
 
+// M11-14 — โหลด+แสดงรายการ key (หลายอันต่อ provider ได้) + ปุ่มลบ
+let cloudKeys = [];
+async function loadKeys() {
+  try { cloudKeys = (await (await fetch(BASE + "/settings/keys")).json()).keys || []; }
+  catch { cloudKeys = []; }
+  keyStatus = {};
+  for (const k of cloudKeys) keyStatus[k.provider] = true;
+  renderKeyStatus();
+  const box = document.getElementById("keys-list");
+  if (box) box.innerHTML = cloudKeys.length
+    ? cloudKeys.map(k =>
+        `<div class="key-item"><span class="key-chip on">${esc(k.provider)}</span> `
+        + `${esc(k.label)} <code>${esc(k.masked)}</code> `
+        + `<button class="ghost sm" onclick="deleteKey('${esc(k.id)}')">✕ ลบ</button></div>`).join("")
+    : `<div class="dim">ยังไม่มี key</div>`;
+}
+
+async function deleteKey(id) {
+  try {
+    const res = await fetch(BASE + "/settings/keys/" + encodeURIComponent(id), { method: "DELETE" });
+    if (res.ok) { feedLine("ln", "ลบ key แล้ว"); loadKeys(); }
+    else feedLine("error", `ลบ key ไม่สำเร็จ (${res.status})`);
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
+}
+
 async function saveKey() {
   const provider = document.getElementById("key-provider").value;
+  const label = document.getElementById("key-label").value.trim();
   const key = document.getElementById("key-value").value.trim();
   if (!key) return;
-  const res = await fetch(BASE + "/settings/apikey", {
+  const res = await fetch(BASE + "/settings/keys", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider, key }),
+    body: JSON.stringify({ provider, label, key }),
   });
   if (res.ok) {
     document.getElementById("key-value").value = "";
-    keyStatus[provider] = true;
-    renderKeyStatus();
-    feedLine("done", `บันทึก ${provider} key แล้ว (เก็บใน .env เครื่องนี้เท่านั้น)`);
+    document.getElementById("key-label").value = "";
+    feedLine("done", `เพิ่ม ${provider} key แล้ว (เก็บ local เครื่องนี้เท่านั้น)`);
+    loadKeys();
   } else {
-    feedLine("error", `บันทึก key ไม่สำเร็จ (${res.status})`);
+    feedLine("error", `เพิ่ม key ไม่สำเร็จ (${res.status})`);
   }
 }
 
@@ -921,7 +946,24 @@ async function openModelPicker(agentId) {
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3
+  document.getElementById("m-model").onchange = () => refreshKeyDropdown();  // M11-14
+  await refreshKeyDropdown(a);
   document.getElementById("model-backdrop").classList.remove("hidden");
+}
+
+// M11-14 — โชว์ dropdown เลือก key เฉพาะเมื่อ model ที่เลือกเป็น cloud (กรองตาม provider)
+async function refreshKeyDropdown(agent) {
+  const row = document.getElementById("m-key-row");
+  const ksel = document.getElementById("m-key");
+  if (!row || !ksel) return;
+  const { provider } = parseModelVal(document.getElementById("m-model").value || "");
+  if (provider === "ollama" || !provider) { row.classList.add("hidden"); return; }
+  let keys = [];
+  try { keys = (await (await fetch(BASE + "/settings/keys?provider=" + encodeURIComponent(provider))).json()).keys || []; } catch {}
+  const cur = agent && agent.key_id ? agent.key_id : "";
+  ksel.innerHTML = `<option value="">(default — key แรกของ ${esc(provider)})</option>`
+    + keys.map(k => `<option value="${esc(k.id)}"${k.id === cur ? " selected" : ""}>${esc(k.label)} ${esc(k.masked)}</option>`).join("");
+  row.classList.remove("hidden");
 }
 
 // M11-3 — สร้าง checklist ของ tool ในโมดัล (ติ๊กตาม allowed_tools; ว่าง = ไม่ติ๊กเลย = ทุก tool)
@@ -979,10 +1021,12 @@ async function saveModel() {
   const thinking_mode = document.getElementById("m-thinking").checked;            // M11-8
   const allowed_tools = [...document.querySelectorAll("#m-tools input:checked")]   // M11-3
     .map(c => c.value);
+  const keyRow = document.getElementById("m-key-row");                             // M11-14
+  const key_id = keyRow.classList.contains("hidden") ? "" : document.getElementById("m-key").value;
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ llm, thinking_mode, allowed_tools }),
+    body: JSON.stringify({ llm, thinking_mode, allowed_tools, key_id }),
   });
   if (res.ok) {
     const toolNote = allowed_tools.length ? `, ${allowed_tools.length} tool` : "";

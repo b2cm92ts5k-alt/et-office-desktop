@@ -440,6 +440,13 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
   font-family: var(--font-mono); font-size: 11px; color: var(--sub); cursor: pointer;
 }
 
+/* M11-14 cloud key list */
+.key-item { display: flex; align-items: center; gap: 6px; margin: 3px 0;
+  font-family: var(--font-mono); font-size: 11px; color: var(--sub); }
+.key-item code { color: var(--cyan); }
+.key-item button.sm { font-size: 10px; padding: 1px 6px; margin-left: auto; }
+.dim { opacity: .55; font-family: var(--font-thai); font-size: 11px; }
+
 /* ---------- local model manager (M7-5) ---------- */
 .model-catalog { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .mc-cat {

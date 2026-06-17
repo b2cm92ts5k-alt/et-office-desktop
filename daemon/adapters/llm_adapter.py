@@ -151,8 +151,26 @@ def specialist_for(role: str = "", keywords: list[str] | None = None) -> dict | 
 
 
 def available_cloud_providers() -> dict:
-    """provider ไหนมี API key พร้อมใช้ (M11-9) — ใช้ตัดสินว่าจะโชว์ banner ไหม"""
-    return {prov: bool(os.environ.get(env)) for prov, env in ENV_KEY_MAP.items()}
+    """provider ไหนมี API key พร้อมใช้ (M11-9/14) — มี key ใน .env default หรือใน key store"""
+    from ..services.cloud_keys import cloud_keys
+    return {prov: bool(os.environ.get(env) or cloud_keys.keys_for(prov))
+            for prov, env in ENV_KEY_MAP.items()}
+
+
+def _resolve_cloud_key(provider: str, key_id: str = "") -> str:
+    """หา API key จริงของ cloud call (M11-14): key_id ระบุ → จาก store; ไม่งั้น default
+    = .env ก่อน แล้วค่อย key แรกใน store. agent เก็บแค่ key_id ไม่เก็บ secret.
+    """
+    from ..services.cloud_keys import cloud_keys
+    if key_id:
+        k = cloud_keys.get(key_id)
+        if k:
+            return k
+    env_key = os.environ.get(ENV_KEY_MAP.get(provider, ""), "")
+    if env_key:
+        return env_key
+    store = cloud_keys.keys_for(provider)
+    return store[0].get("key", "") if store else ""
 
 
 def active_local_tag() -> str:
@@ -175,11 +193,10 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
         # บังคับใช้ active tag เดียวเสมอ (ไม่สน cfg.model) — invariant กันรัน local 2 ตัวซ้อน (M7-8)
         return LLM(model=f"ollama/{active_local_tag()}", base_url=OLLAMA_BASE_URL, **extra)
 
-    env_var = ENV_KEY_MAP[cfg.provider]
-    key = os.environ.get(env_var, "")
+    key = _resolve_cloud_key(cfg.provider, getattr(cfg, "key_id", "") or "")
     if not key:
         raise MissingAPIKeyError(
-            f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings (env: {env_var})"
+            f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings"
         )
 
     model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]

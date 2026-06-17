@@ -38,3 +38,4 @@ Desktop.ini
 !installer/et-office.spec
 pyinstaller-build/
 daemon_qa*.log
+daemon/data/cloud_keys.json

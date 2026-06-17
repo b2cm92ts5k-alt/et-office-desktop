@@ -9,6 +9,7 @@ live ollama เป็น optional: ถ้า server ไม่ตอบจะ ski
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -166,6 +167,23 @@ def main() -> None:
     check("cloud_price gemini free = (0,0)", LA.cloud_price("gemini", "gemini-2.5-flash") == (0.0, 0.0))
     check("cloud_price unknown → None", LA.cloud_price("openai", "ไม่มีจริง") is None)
 
+    # ---------- M11-14 Multi-key ต่อ provider ----------
+    print("\n--- M11-14 Multi-key ---")
+    import daemon.services.cloud_keys as CK
+    CK.KEYS_PATH = Path(tempfile.mkdtemp()) / "k.json"
+    ck = CK.cloud_keys; ck._keys = []
+    k1 = ck.add("gemini", "work", "AIzaSEC1111")
+    k2 = ck.add("gemini", "home", "AIzaSEC2222")
+    check("เพิ่มหลาย key/provider", len(ck.keys_for("gemini")) == 2)
+    check("public masked ไม่มี secret", all("key" not in p and p["masked"].endswith("1111")
+          for p in ck.public_for("gemini")[:1]))
+    check("get secret (server-side)", ck.get(k1["id"]) == "AIzaSEC1111")
+    check("AgentConfig.key_id default ''", AgentConfig(name="x", role="y").key_id == "")
+    os.environ.pop("GOOGLE_API_KEY", None)
+    check("resolve by key_id", LA._resolve_cloud_key("gemini", k2["id"]) == "AIzaSEC2222")
+    check("resolve fallback = store แรก", LA._resolve_cloud_key("gemini", "") == "AIzaSEC1111")
+    check("delete key", ck.delete(k1["id"]) and len(ck.keys_for("gemini")) == 1)
+
     # ---------- M11-11 Per-agent memory ----------
     print("\n--- M11-11 Per-agent memory ---")
     import daemon.services.memory_service as MS
@@ -195,7 +213,8 @@ def main() -> None:
     try:
         import daemon.main
         paths = {getattr(r, "path", "") for r in daemon.main.app.routes}
-        for p in ("/settings/reviewer", "/settings/specialist", "/settings/cost", "/settings/team-memory"):
+        for p in ("/settings/reviewer", "/settings/specialist", "/settings/cost",
+                  "/settings/team-memory", "/settings/keys", "/tools"):
             check(f"route {p}", p in paths)
     except Exception as e:  # noqa: BLE001
         check("import daemon.main (route check)", False, str(e)[:60])

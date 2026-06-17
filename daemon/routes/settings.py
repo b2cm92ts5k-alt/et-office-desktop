@@ -40,6 +40,56 @@ def apikey_status() -> dict:
     return {p: bool(os.environ.get(v)) for p, v in ENV_KEY_MAP.items()}
 
 
+class KeyAddReq(BaseModel):
+    provider: str
+    key: str
+    label: str = ""
+
+
+@router.get("/settings/keys")
+def list_keys(provider: str = "") -> dict:
+    """M11-14 — รายการ cloud key (masked) : default จาก .env + key ใน store; filter ด้วย ?provider"""
+    from ..services.cloud_keys import cloud_keys, mask
+    out: list[dict] = []
+    for prov, env in ENV_KEY_MAP.items():
+        if provider and prov != provider:
+            continue
+        v = os.environ.get(env)
+        if v:
+            out.append({"id": f"env:{prov}", "provider": prov, "label": "default (.env)",
+                        "masked": mask(v), "source": "env"})
+        for k in cloud_keys.public_for(prov):
+            out.append({**k, "source": "store"})
+    return {"keys": out}
+
+
+@router.post("/settings/keys")
+def add_key(payload: KeyAddReq) -> dict:
+    """M11-14 — เพิ่ม cloud key ใหม่ (หลายอันต่อ provider ได้) เก็บใน store local เท่านั้น"""
+    if payload.provider not in ENV_KEY_MAP:
+        raise HTTPException(400, "provider ไม่ถูกต้อง")
+    if not payload.key.strip():
+        raise HTTPException(400, "ใส่ API key ก่อน")
+    from ..services.cloud_keys import cloud_keys
+    return cloud_keys.add(payload.provider, payload.label, payload.key)
+
+
+@router.delete("/settings/keys/{key_id}")
+def delete_key(key_id: str) -> dict:
+    """M11-14 — ลบ key (env: = เคลียร์ .env default ของ provider, อื่น = ลบจาก store)"""
+    from ..services.cloud_keys import cloud_keys
+    if key_id.startswith("env:"):
+        prov = key_id.split(":", 1)[1]
+        env = ENV_KEY_MAP.get(prov)
+        if env:
+            _write_env_value(env, "")
+            os.environ.pop(env, None)
+        return {"deleted": key_id}
+    if not cloud_keys.delete(key_id):
+        raise HTTPException(404, "ไม่พบ key นี้")
+    return {"deleted": key_id}
+
+
 @router.get("/settings/social")
 def get_social_settings() -> dict:
     return settings_store.all()
