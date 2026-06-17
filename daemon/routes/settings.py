@@ -1,13 +1,15 @@
 """/settings — apikey (M1-12), social (M3-10), workspace (M6-6)
 apikey เก็บลง daemon/.env เท่านั้น ไม่ log ไม่ broadcast"""
 from pathlib import Path
+from typing import Optional
 
 import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..adapters.llm_adapter import ENV_KEY_MAP
+from ..adapters.llm_adapter import (
+    ENV_KEY_MAP, available_cloud_providers, specialist_for)
 from ..models.schemas import ApiKeyRequest, SocialSettings, WorkspaceSettings
 from ..services.settings_store import settings_store
 
@@ -131,6 +133,86 @@ def complete_onboarding() -> dict:
     """เรียกหลังสร้าง CEO สำเร็จ — กัน wizard เด้งซ้ำครั้งต่อไป"""
     settings_store.update({"onboarded": True})
     return {"onboarded": True}
+
+
+@router.get("/settings/specialist")
+def specialist_recommendation(role: str = "", keywords: str = "") -> dict:
+    """M11-9 — แนะนำ cloud specialist ต่อ role (opt-in banner ตอน hire/gear)
+
+    คืน suggestion + key_available (มี key ของ provider นั้นไหม) + providers ทั้งหมด.
+    UI โชว์ banner เฉพาะเมื่อ suggestion ไม่ null และ key_available=True. ไม่เปลี่ยน model เอง.
+    """
+    kws = [k.strip() for k in keywords.split(",") if k.strip()]
+    sug = specialist_for(role, kws)
+    providers = available_cloud_providers()
+    return {
+        "suggestion": sug,
+        "key_available": bool(sug and providers.get(sug["provider"])),
+        "providers": providers,
+    }
+
+
+class ReviewerSettings(BaseModel):
+    enabled: bool
+
+
+@router.get("/settings/reviewer")
+def get_reviewer() -> dict:
+    """M11-7 — สถานะ reviewer (เปิด = ตรวจ final รอบ 2 ด้วย same local model)"""
+    return {"enabled": bool(settings_store.get("reviewer_enabled"))}
+
+
+@router.put("/settings/reviewer")
+def set_reviewer(payload: ReviewerSettings) -> dict:
+    """เปิด/ปิด reviewer (M11-7) — มีผลกับ task ถัดไปทันที"""
+    settings_store.update({"reviewer_enabled": payload.enabled})
+    return {"enabled": payload.enabled}
+
+
+class TeamMemoryRequest(BaseModel):
+    text: str
+
+
+@router.get("/settings/team-memory")
+def get_team_memory() -> dict:
+    """M11-11 — ความจำร่วมของทีม (เป้าหมาย sprint ฯลฯ) ที่ inject ให้ทุก agent"""
+    from ..services.memory_service import memory_service
+    return {"text": memory_service.team()}
+
+
+@router.put("/settings/team-memory")
+def set_team_memory(payload: TeamMemoryRequest) -> dict:
+    """ตั้ง/แก้ความจำร่วมของทีม (M11-11)"""
+    from ..services.memory_service import memory_service
+    return {"text": memory_service.set_team(payload.text)}
+
+
+class CostSettings(BaseModel):
+    enabled: Optional[bool] = None
+    daily_usd: Optional[float] = None
+    hourly_usd: Optional[float] = None
+
+
+@router.get("/settings/cost")
+def get_cost() -> dict:
+    """M11-10 — สถานะ cost guard (ใช้ไปเท่าไร/เพดาน/เกินไหม)"""
+    from ..services.cost_guard import cost_guard
+    return cost_guard.status()
+
+
+@router.put("/settings/cost")
+def set_cost(payload: CostSettings) -> dict:
+    """ตั้งค่า cost guard (M11-10) — มีผลทันที"""
+    changes = {}
+    if payload.enabled is not None:
+        changes["cost_guard_enabled"] = payload.enabled
+    if payload.daily_usd is not None:
+        changes["cost_daily_usd"] = max(0.0, payload.daily_usd)
+    if payload.hourly_usd is not None:
+        changes["cost_hourly_usd"] = max(0.0, payload.hourly_usd)
+    settings_store.update(changes)
+    from ..services.cost_guard import cost_guard
+    return cost_guard.status()
 
 
 @router.get("/settings/workspace")

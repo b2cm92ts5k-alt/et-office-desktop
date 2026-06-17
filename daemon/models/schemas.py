@@ -36,6 +36,8 @@ class AgentConfig(BaseModel):
     sprite: str = ""                # custom spritesheet ใน data/sprites/ (M6-2 v2)
     is_ceo: bool = False            # ตัวละคร CEO/ผู้ใช้ จาก onboarding (M8) — ไล่ออกไม่ได้
     llm: LLMConfig = LLMConfig()
+    allowed_tools: list[str] = []   # M11-3 whitelist ต่อ role — ว่าง = อนุญาตทุก tool (backward compat)
+    thinking_mode: bool = False     # M11-8 — True = /think (วางแผน, orchestrator); False = /no_think (worker, เร็ว 2-3x)
     status: AgentStatus = "idle"
 
 
@@ -50,6 +52,8 @@ class AgentCreate(BaseModel):
     sprite: str = ""
     is_ceo: bool = False
     llm: LLMConfig = LLMConfig()
+    allowed_tools: list[str] = []   # M11-3
+    thinking_mode: bool = False     # M11-8
 
 
 class AgentUpdate(BaseModel):
@@ -62,6 +66,8 @@ class AgentUpdate(BaseModel):
     backstory: Optional[str] = None
     sprite: Optional[str] = None
     llm: Optional[LLMConfig] = None
+    allowed_tools: Optional[list[str]] = None   # M11-3
+    thinking_mode: Optional[bool] = None        # M11-8
 
 
 class TaskRequest(BaseModel):

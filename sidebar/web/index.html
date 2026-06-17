@@ -132,6 +132,11 @@
       <div id="mcp-list" class="set-row"></div>
       <div class="warn-note">tools ของ MCP server จะให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;) ผ่าน permission gate เหมือน tool อื่น</div>
 
+      <h3>TUNING — multi-agent (M11)</h3>
+      <div class="set-row">
+        <label class="inline"><input type="checkbox" id="reviewer-enabled" onchange="saveReviewer()"> เปิด Reviewer ตรวจคำตอบก่อนส่ง (ช้าลงนิด แม่นขึ้น)</label>
+      </div>
+
       <h3>SOCIAL LOOP</h3>
       <div class="set-row">
         <label class="inline"><input type="checkbox" id="soc-enabled"> เปิด agent คุยกันเอง</label>
@@ -251,7 +256,14 @@
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
     <label>Model AI <select id="m-model"></select></label>
+    <div id="m-specialist" class="hidden"></div>
     <div class="warn-note">เพิ่ม model อื่นได้ที่ SETTINGS — Local Models (ลง local เพิ่ม) หรือ API Keys (cloud)</div>
+
+    <label class="inline" style="margin-top:8px"><input type="checkbox" id="m-thinking"> โหมดคิดก่อนตอบ /think (วางแผน/orchestrator — ช้าลงแต่แม่นขึ้น; ปิด = worker เร็ว)</label>
+
+    <h3 style="margin:10px 0 4px">สิทธิ์ใช้ tool (M11-3)</h3>
+    <div class="warn-note">ติ๊กเฉพาะ tool ที่อนุญาต — <b>ไม่ติ๊กเลย = อนุญาตทุก tool</b></div>
+    <div id="m-tools" class="tool-checklist"></div>
     <div class="modal-actions">
       <button class="ghost" onclick="closeModelPicker()">ยกเลิก</button>
       <button class="neon-btn" onclick="saveModel()">SAVE</button>

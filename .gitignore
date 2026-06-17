@@ -37,3 +37,4 @@ Desktop.ini
 *.spec
 !installer/et-office.spec
 pyinstaller-build/
+daemon_qa*.log

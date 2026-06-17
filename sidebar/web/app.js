@@ -382,6 +382,18 @@ function toggleSettings() {
 
 let keyStatus = {};
 
+// M11-7 — เปิด/ปิด reviewer (global)
+async function saveReviewer() {
+  const enabled = document.getElementById("reviewer-enabled").checked;
+  try {
+    await fetch(BASE + "/settings/reviewer", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    feedLine("done", enabled ? "เปิด Reviewer แล้ว" : "ปิด Reviewer แล้ว");
+  } catch { feedLine("error", "ตั้ง reviewer ไม่สำเร็จ"); }
+}
+
 async function loadSettings() {
   try {
     const vram = await (await fetch(BASE + "/system/vram")).json();
@@ -397,6 +409,8 @@ async function loadSettings() {
     const ws = await (await fetch(BASE + "/settings/workspace")).json();
     document.getElementById("ws-path").value = ws.path;
     renderWsStatus(ws);
+    const rev = await (await fetch(BASE + "/settings/reviewer")).json();   // M11-7
+    document.getElementById("reviewer-enabled").checked = !!rev.enabled;
     loadModelCatalog();
     loadMcp();
     checkOllama();   // เปิด settings = จังหวะดีเช็ค ollama ซ้ำ (M5-5)
@@ -904,7 +918,53 @@ async function openModelPicker(agentId) {
   pickerAgentId = agentId;
   document.getElementById("m-agent-name").textContent = a.name;
   fillModelSelect(document.getElementById("m-model"), await loadAvailableModels(true), a.llm);
+  loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
+  document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
+  await loadToolChecklist(a.allowed_tools || []);                       // M11-3
   document.getElementById("model-backdrop").classList.remove("hidden");
+}
+
+// M11-3 — สร้าง checklist ของ tool ในโมดัล (ติ๊กตาม allowed_tools; ว่าง = ไม่ติ๊กเลย = ทุก tool)
+let _toolList = null;
+async function loadToolChecklist(allowed) {
+  const box = document.getElementById("m-tools");
+  if (!box) return;
+  if (!_toolList) {
+    try { _toolList = (await (await fetch(BASE + "/tools")).json()).tools || []; }
+    catch { _toolList = []; }
+  }
+  const set = new Set(allowed);
+  box.innerHTML = _toolList.map(t =>
+    `<label class="inline tool-item" title="${esc(t.desc)}">`
+    + `<input type="checkbox" value="${esc(t.name)}"${set.has(t.name) ? " checked" : ""}> ${esc(t.name)}</label>`
+  ).join("");
+}
+
+// M11-9 (§5.2) — banner opt-in: แนะนำ cloud specialist ตาม role เมื่อมี key (CEO กดใช้เอง ไม่บังคับ)
+async function loadSpecialistBanner(a) {
+  const box = document.getElementById("m-specialist");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+  try {
+    const q = new URLSearchParams({ role: a.role || "", keywords: (a.keywords || []).join(",") });
+    const d = await (await fetch(BASE + "/settings/specialist?" + q)).json();
+    if (!d.suggestion || !d.key_available) return;  // ไม่มี key → ไม่รบกวน, ใช้ local ต่อ
+    const s = d.suggestion;
+    box.innerHTML = `💡 <b>${esc(a.role)}</b> แนะนำใช้ <b>${esc(s.provider)}/${esc(s.model)}</b> — `
+      + `${esc(s.reason)} <button class="neon-btn" id="m-spec-apply">ใช้เลย</button>`;
+    box.classList.remove("hidden");
+    document.getElementById("m-spec-apply").onclick = () => {
+      const sel = document.getElementById("m-model");
+      const val = s.provider + "|" + s.model;
+      if (![...sel.options].some(o => o.value === val)) {
+        const op = document.createElement("option");
+        op.value = val; op.textContent = "☁ " + s.provider + "/" + s.model + " (แนะนำ)";
+        sel.appendChild(op);
+      }
+      sel.value = val;
+    };
+  } catch { /* daemon ล่ม → ไม่โชว์ banner เฉย ๆ */ }
 }
 
 function closeModelPicker(ev) {
@@ -916,13 +976,17 @@ function closeModelPicker(ev) {
 async function saveModel() {
   if (!pickerAgentId) return;
   const llm = parseModelVal(document.getElementById("m-model").value);
+  const thinking_mode = document.getElementById("m-thinking").checked;            // M11-8
+  const allowed_tools = [...document.querySelectorAll("#m-tools input:checked")]   // M11-3
+    .map(c => c.value);
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ llm }),
+    body: JSON.stringify({ llm, thinking_mode, allowed_tools }),
   });
   if (res.ok) {
-    feedLine("done", `เปลี่ยน model เป็น ${esc(llm.provider)}/${esc(llm.model)}`);
+    const toolNote = allowed_tools.length ? `, ${allowed_tools.length} tool` : "";
+    feedLine("done", `บันทึก ${esc(llm.provider)}/${esc(llm.model)}${thinking_mode ? " /think" : ""}${toolNote}`);
     document.getElementById("model-backdrop").classList.add("hidden");
     loadAgents();
   } else {
@@ -1008,6 +1072,34 @@ function nameOf(agentId) {
   return agents[agentId] ? agents[agentId].name : agentId;
 }
 
+/* ---------- observability (M11-5, §4.2) ---------- */
+// สะสมสถิติต่อ agent ในเซสชัน — ดูได้ทาง window.etAgentStats() (ฐานของ dashboard รอบหน้า)
+const agentStats = {};
+
+function recordStats(d) {
+  if (!d || !d.agent_id) return;
+  const s = agentStats[d.agent_id] || (agentStats[d.agent_id] = {
+    name: nameOf(d.agent_id), tasks: 0, latency_ms: 0, tokens_in: 0, tokens_out: 0, cache_hits: 0 });
+  s.name = nameOf(d.agent_id);
+  s.tasks += 1;
+  s.latency_ms += d.latency_ms || 0;
+  s.tokens_in += d.tokens_in || 0;
+  s.tokens_out += d.tokens_out || 0;
+  s.cache_hits += d.cache_hits || 0;
+}
+window.etAgentStats = () => agentStats;  // เรียกใน console ดูสถิติต่อ agent
+
+// chip metric เล็ก ๆ ต่อท้ายบรรทัด feed: model · เวลา · ↑in↓out · ⚡cache
+function fmtMetrics(d) {
+  if (!d || !d.model) return "";
+  const ms = d.latency_ms || 0;
+  const dur = ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
+  const tok = (d.tokens_in || d.tokens_out)
+    ? ` · ↑${d.tokens_in || 0}↓${d.tokens_out || 0}` : "";
+  const cache = d.cache_hits ? ` · ⚡${d.cache_hits}` : "";
+  return ` <span style="opacity:.55;font-size:.85em">[${esc(d.model)} · ${dur}${tok}${cache}]</span>`;
+}
+
 function handleEvent(ev) {
   const d = ev.data || {};
   switch (ev.type) {
@@ -1019,10 +1111,12 @@ function handleEvent(ev) {
       loadAgents();
       break;
     case "task.completed":
-      feedLine("done", `✔ <b>${esc(nameOf(d.agent_id))}</b>: ${esc(trim(d.output, 400))}`);
+      recordStats(d);
+      feedLine("done", `✔ <b>${esc(nameOf(d.agent_id))}</b>: ${esc(trim(d.output, 400))}${fmtMetrics(d)}`);
       break;
     case "task.failed":
-      feedLine("error", `✘ ${esc(nameOf(d.agent_id))}: ${esc(trim(d.error, 200))}`);
+      recordStats(d);
+      feedLine("error", `✘ ${esc(nameOf(d.agent_id))}: ${esc(trim(d.error, 200))}${fmtMetrics(d)}`);
       break;
     case "social.meetup":
       feedLine("social", `☕ ${esc((d.names || []).join(" × "))} จับคู่คุยกัน`);

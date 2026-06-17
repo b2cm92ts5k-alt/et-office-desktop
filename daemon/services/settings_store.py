@@ -21,6 +21,10 @@ DEFAULTS: dict = {
     "github_login": "",              # username ที่ผูก GitHub token ไว้ (M9-3) — token เก็บใน .env
     "github_repo": "",               # repo เป้าหมายของทีม "owner/name" (M9-4)
     "mcp_servers": [],               # MCP servers [{name, command, enabled}] (M10)
+    "reviewer_enabled": False,       # M11-7 — reviewer รอบ 2 (same local model) ตรวจ final ก่อนส่ง; ปิดไว้กันงานเร็วเปลือง
+    "cost_guard_enabled": True,      # M11-10 — เปิด guard ค่า cloud
+    "cost_daily_usd": 5.0,           # M11-10 — เพดานต่อวัน (USD); 0 = ไม่จำกัด
+    "cost_hourly_usd": 0.0,          # M11-10 — เพดานต่อชั่วโมง (USD); 0 = ไม่จำกัด
 }
 
 

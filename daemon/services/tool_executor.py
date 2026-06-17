@@ -47,6 +47,29 @@ TOOLS_SPEC = {
 }
 
 
+# M11-3 (§3.3) — preset whitelist แนะนำต่อ role (UI/hire เอาไปตั้ง allowed_tools ได้)
+# ไม่ได้บังคับใช้เอง — เป็นแค่ค่าแนะนำ; การบังคับจริงดูที่ tool_allowed() + task_router
+ROLE_TOOL_PRESETS: dict[str, list[str]] = {
+    "coder":      ["read_file", "write_file", "list_dir", "mkdir", "move",
+                   "git_status", "git_diff", "git_commit", "git_push"],
+    "designer":   ["read_file", "write_file", "list_dir", "mkdir"],
+    "researcher": ["read_file", "write_file", "list_dir", "fetch_url"],
+    "producer":   ["read_file", "list_dir",
+                   "gh_list_issues", "gh_create_issue", "gh_comment_issue", "gh_close_issue"],
+}
+
+
+def tool_allowed(tool: str, allowed_tools: list[str] | None) -> bool:
+    """M11-3 — เช็ค whitelist ต่อ role ก่อนรัน tool
+
+    ว่าง/None = อนุญาตทุก tool (backward compat กับ agent เดิมที่ไม่ได้ตั้ง).
+    ตั้งรายการแล้ว = อนุญาตเฉพาะที่อยู่ในรายการ (เช่น designer เรียก git_push ไม่ได้).
+    """
+    if not allowed_tools:
+        return True
+    return tool in allowed_tools
+
+
 class WorkspaceError(Exception):
     pass
 

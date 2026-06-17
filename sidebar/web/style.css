@@ -426,6 +426,20 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
 }
 .warn-note.hidden { display: none; }
 
+/* M11 per-agent settings ในโมดัล: checkbox แนวนอน + tool whitelist (เลื่อน/ห่อบรรทัด) */
+#model-modal label.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 11px; }
+#model-modal label.inline input, #model-modal .tool-item input { width: auto; flex: 0 0 auto; padding: 0; }
+#model-modal h3 { font-family: var(--font-pixel); font-size: 8px; color: var(--cyan); }
+.tool-checklist {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  max-height: 132px; overflow-y: auto;
+  border: 1px solid var(--border); padding: 6px; background: var(--bg);
+}
+.tool-checklist .tool-item {
+  flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--sub); cursor: pointer;
+}
+
 /* ---------- local model manager (M7-5) ---------- */
 .model-catalog { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .mc-cat {

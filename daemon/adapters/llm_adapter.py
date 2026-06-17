@@ -5,14 +5,62 @@ key ไม่เคยอยู่ใน agent config / registry / log (privacy 
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import subprocess
+import threading
+import time
+from collections import OrderedDict
 
 from crewai import LLM
 
 from ..models.schemas import LLMConfig
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# --- LLM response cache (M11-4, §3.6) ---
+# งานซ้ำ ๆ (เช่น commit message สั้น) ไม่ต้องยิง model ใหม่ — key = hash(model+messages+temp+schema)
+# creative (temp > CACHE_TEMP_MAX) ข้าม cache เพราะอยากได้คำตอบหลากหลาย
+CACHE_MAX = 100          # LRU entries
+CACHE_TTL = 600          # วินาที (10 นาที)
+CACHE_TEMP_MAX = 0.5     # temp เกินนี้ = creative → ไม่ cache
+_cache: "OrderedDict[str, tuple[float, str]]" = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _cache_key(model: str, messages: list[dict], temperature: float, schema: dict | None) -> str:
+    blob = json.dumps(
+        {"m": model, "msgs": messages, "t": temperature, "s": schema},
+        ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str) -> str | None:
+    with _cache_lock:
+        item = _cache.get(key)
+        if item is None:
+            return None
+        ts, val = item
+        if time.time() - ts > CACHE_TTL:
+            _cache.pop(key, None)  # หมดอายุ
+            return None
+        _cache.move_to_end(key)    # LRU touch
+        return val
+
+
+def _cache_put(key: str, val: str) -> None:
+    with _cache_lock:
+        _cache[key] = (time.time(), val)
+        _cache.move_to_end(key)
+        while len(_cache) > CACHE_MAX:
+            _cache.popitem(last=False)  # ทิ้งตัวเก่าสุด
+
+
+def cache_clear() -> None:
+    """ล้าง cache ทั้งหมด (ใช้ตอนสลับ active model / เทส)"""
+    with _cache_lock:
+        _cache.clear()
 
 ENV_KEY_MAP = {
     "claude": "ANTHROPIC_API_KEY",
@@ -22,13 +70,44 @@ ENV_KEY_MAP = {
 
 DEFAULT_CLOUD_MODELS = {
     "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o",
 }
 
 
 class MissingAPIKeyError(Exception):
     pass
+
+
+# M11-9 (§4.1/5.1) — specialist cloud แนะนำต่อ role (opt-in: โชว์ banner เมื่อมี key, CEO กดเอง ไม่บังคับ)
+# cloud ไม่กิน VRAM → ไม่ละเมิด 1-active-local; default ทุก agent ยังเป็น local qwen3
+SPECIALIST_PRESETS: list[dict] = [
+    {"match": ["producer", "orchestrat", "วางแผน", "manager", "เลขา"],
+     "provider": "claude", "model": "claude-sonnet-4-6", "reason": "วางแผน/แตกงานหลายขั้น แม่นสุด"},
+    {"match": ["coder", "program", "dev", "เขียนโค้ด", "โปรแกรม", "วิศวกร"],
+     "provider": "claude", "model": "claude-sonnet-4-6", "reason": "code quality สูงสุด"},
+    {"match": ["design", "ดีไซน์", "ออกแบบ", "ศิลป", "กราฟิก"],
+     "provider": "openai", "model": "gpt-4o", "reason": "multimodal รับภาพได้"},
+    {"match": ["research", "วิจัย", "ค้นคว้า", "หาข้อมูล", "วิเคราะห์"],
+     "provider": "gemini", "model": "gemini-2.5-flash", "reason": "ถูก+เร็ว web grounding ดี"},
+]
+
+
+def specialist_for(role: str = "", keywords: list[str] | None = None) -> dict | None:
+    """หา specialist cloud ที่เหมาะกับ role (M11-9) — คืน {provider, model, reason} หรือ None
+
+    match จาก role + keywords (ไม่สน case). ใช้โชว์ banner ตอน hire/gear — ไม่เปลี่ยน model เอง.
+    """
+    hay = (role + " " + " ".join(keywords or [])).lower()
+    for p in SPECIALIST_PRESETS:
+        if any(kw in hay for kw in p["match"]):
+            return {"provider": p["provider"], "model": p["model"], "reason": p["reason"]}
+    return None
+
+
+def available_cloud_providers() -> dict:
+    """provider ไหนมี API key พร้อมใช้ (M11-9) — ใช้ตัดสินว่าจะโชว์ banner ไหม"""
+    return {prov: bool(os.environ.get(env)) for prov, env in ENV_KEY_MAP.items()}
 
 
 def active_local_tag() -> str:
@@ -61,6 +140,90 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
     model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
     prefix = {"claude": "anthropic", "gemini": "gemini", "openai": "openai"}[cfg.provider]
     return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
+
+
+def ollama_chat(
+    messages: list[dict],
+    *,
+    schema: dict | None = None,
+    temperature: float = 0.2,
+    timeout: int = 180,
+    stats: dict | None = None,
+    think: bool | None = None,
+) -> str:
+    """เรียก Ollama /api/chat ตรง ๆ พร้อมบังคับ output ตาม JSON schema (M11-1, §3.1)
+
+    ใช้กับ local tool-loop เท่านั้น — `format: <schema>` ของ Ollama 0.5+ การันตี output
+    เป็น JSON ที่ตรง schema 100% (qwen3 หลุด schema บ่อยถ้าบังคับผ่าน prompt อย่างเดียว).
+    บังคับ model = active_local_tag() เสมอ (เคารพกฎ 1-active-local M7-8 เหมือน get_llm).
+    cloud provider ไม่ผ่านทางนี้ — ยังใช้ CrewAI LLM (มี structured output ของตัวเอง).
+    cache (M11-4): temp <= CACHE_TEMP_MAX → ใช้ cache ตาม (model+messages+temp+schema+think).
+    stats (M11-5): ถ้าส่ง dict มา → สะสม tokens_in/tokens_out/llm_calls (cache hit = 0 token).
+    think (M11-8): True=/think (วางแผน), False=/no_think (เร็ว); None=ปล่อยตาม default ของ model.
+    """
+    import urllib.request
+    model = active_local_tag()
+    if stats is not None:
+        stats["model"] = model
+        stats["provider"] = "ollama"
+    use_cache = temperature <= CACHE_TEMP_MAX
+    key = _cache_key(model, messages, temperature, (schema, think)) if use_cache else ""
+    if key:
+        hit = _cache_get(key)
+        if hit is not None:
+            if stats is not None:
+                stats["cache_hits"] = stats.get("cache_hits", 0) + 1
+            return hit
+    body: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    if schema is not None:
+        body["format"] = schema
+    if think is not None:
+        body["think"] = think   # qwen3: True=/think, False=/no_think (M11-8)
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    content = data.get("message", {}).get("content", "")
+    if stats is not None:
+        stats["tokens_in"] = stats.get("tokens_in", 0) + int(data.get("prompt_eval_count", 0) or 0)
+        stats["tokens_out"] = stats.get("tokens_out", 0) + int(data.get("eval_count", 0) or 0)
+        stats["llm_calls"] = stats.get("llm_calls", 0) + 1
+    if key and content:
+        _cache_put(key, content)
+    return content
+
+
+# M11-6 (§3.4) — context budget ต่อขนาด model (scale ตาม VRAM: เครื่องแรง = หน้าต่างกว้าง = AI ฉลาดกว่า)
+# keep_turns = จำนวน message ท้ายสุดที่เก็บเต็ม | obs_clip = ตัด observation ที่ส่งกลับ model
+# sys_budget_tok = เพดาน token ของ system prompt+schema (แค่เตือน ไม่ตัด เพราะ tool list ห้ามหาย)
+CONTEXT_PRESETS: dict[str, dict] = {
+    "qwen3:1.7b": {"keep_turns": 6,  "obs_clip": 2000,  "sys_budget_tok": 1500},
+    "qwen3:8b":   {"keep_turns": 8,  "obs_clip": 4000,  "sys_budget_tok": 2000},
+    "qwen3:14b":  {"keep_turns": 12, "obs_clip": 8000,  "sys_budget_tok": 3000},
+    "qwen3:32b":  {"keep_turns": 16, "obs_clip": 16000, "sys_budget_tok": 4000},
+}
+_CONTEXT_DEFAULT = {"keep_turns": 8,  "obs_clip": 4000,  "sys_budget_tok": 2000}
+_CONTEXT_CLOUD = {"keep_turns": 20, "obs_clip": 16000, "sys_budget_tok": 6000}
+
+
+def context_budget(provider: str = "ollama") -> dict:
+    """งบ context ต่อ hop (M11-6) — local อิงขนาด active model จริง, cloud ใช้ preset กว้าง
+
+    เครื่องที่ VRAM มาก → active model ใหญ่ → keep_turns/obs_clip มากขึ้นอัตโนมัติ
+    (model ที่ลงไม่ตรง preset เช่น gemma → ใช้ default ของ 8b เป็นค่ากลางปลอดภัย).
+    """
+    if provider != "ollama":
+        return dict(_CONTEXT_CLOUD)
+    return dict(CONTEXT_PRESETS.get(active_local_tag(), _CONTEXT_DEFAULT))
 
 
 class VRAMDetector:

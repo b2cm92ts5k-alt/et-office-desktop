@@ -72,7 +72,9 @@ class AgentRegistry:
             if not agent:
                 return None
             changes = {k: v for k, v in payload.model_dump().items() if v is not None}
-            updated = agent.model_copy(update=changes)
+            # re-validate ผ่าน AgentConfig เพื่อ coerce nested model (เช่น llm dict → LLMConfig)
+            # model_copy(update=) ของ pydantic ไม่ validate → ปล่อยให้ llm เป็น dict ดิบ แล้วพังตอนอ่าน .provider
+            updated = AgentConfig(**{**agent.model_dump(), **changes})
             self._agents[agent_id] = updated
             self._save()
             return updated

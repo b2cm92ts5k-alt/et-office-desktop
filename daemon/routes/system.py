@@ -14,6 +14,13 @@ def vram() -> dict:
     return _detector.detect()
 
 
+@router.get("/tools")
+def tools() -> dict:
+    """รายชื่อ built-in tool ทั้งหมด (M11-3) — UI ใช้ทำ whitelist checklist ต่อ agent"""
+    from ..services.tool_executor import TOOLS_SPEC
+    return {"tools": [{"name": n, "desc": s["desc"]} for n, s in TOOLS_SPEC.items()]}
+
+
 @router.get("/health")
 def health() -> dict:
     return {
