@@ -415,6 +415,7 @@ async function loadSettings() {
     document.getElementById("vram-info").textContent =
       `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
     await loadKeys();   // M11-14 — โหลด key list (default .env + store)
+    await loadAccounts();  // M14-10 — โหลดบัญชี provider (api_key + oauth)
     renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
@@ -792,6 +793,75 @@ async function saveKey() {
   }
 }
 
+/* ---------- Provider Accounts (M14-10) — api_key + Claude OAuth ---------- */
+const AUTH_BADGE = { oauth: "🔑 OAuth", api_key: "🗝 API key" };
+
+async function loadAccounts() {
+  let data = { accounts: [], providers: [] };
+  try { data = await (await fetch(BASE + "/accounts")).json(); } catch {}
+  // ปุ่ม Login with Claude — โชว์เฉพาะ provider ที่รองรับ OAuth
+  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth);
+  const loginBox = document.getElementById("acc-oauth");
+  if (loginBox) {
+    loginBox.innerHTML = claude
+      ? `<button class="neon-btn" onclick="connectOAuth('claude')">เข้าสู่ระบบด้วย Claude (subscription)</button>`
+        + (claude.oauth_ready ? "" : ` <span class="dim sm">— ต้องตั้ง OAuth client_id ก่อน (ENV)</span>`)
+      : "";
+  }
+  const box = document.getElementById("accounts-list");
+  if (box) box.innerHTML = (data.accounts || []).length
+    ? data.accounts.map(a =>
+        `<div class="key-item"><span class="key-chip on">${esc(a.provider)}</span> `
+        + `<span class="sm">${AUTH_BADGE[a.auth_mode] || a.auth_mode}</span> ${esc(a.label)} `
+        + `<code>${esc(a.auth_mode === "oauth" ? "·login·" : a.masked)}</code> `
+        + `<button class="ghost sm" onclick="deleteAccount('${esc(a.id)}')">✕ ถอด</button></div>`).join("")
+    : `<div class="dim">ยังไม่มีบัญชี — เพิ่ม API key หรือ login ด้านบน</div>`;
+}
+
+async function connectOAuth(provider) {
+  try {
+    const res = await fetch(BASE + "/accounts/oauth/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    });
+    const d = await res.json();
+    if (!res.ok) { feedLine("error", `เริ่ม login ไม่ได้: ${d.detail || res.status}`); return; }
+    if (!d.browser_opened && d.authorize_url) window.open(d.authorize_url, "_blank");
+    feedLine("ln", `เปิดหน้า login ${provider} แล้ว — ยินยอมในเบราว์เซอร์ เสร็จแล้วกลับมา`);
+    setTimeout(loadAccounts, 4000);   // เด้งรีเฟรชหลัง callback (เผื่อ login เร็ว)
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
+}
+
+async function addAccountKey() {
+  const provider = document.getElementById("acc-provider").value;
+  const label = document.getElementById("acc-label").value.trim();
+  const key = document.getElementById("acc-key").value.trim();
+  if (!key) return;
+  feedLine("ln", `กำลังตรวจสอบ key ${provider}…`);
+  const res = await fetch(BASE + "/accounts/api-key", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, label, key, validate: true }),
+  });
+  const d = await res.json();
+  if (res.ok) {
+    document.getElementById("acc-key").value = "";
+    document.getElementById("acc-label").value = "";
+    const n = (d.models || []).length;
+    feedLine("done", `เพิ่มบัญชี ${provider} แล้ว${n ? ` (${n} model พร้อมใช้)` : ""} — เก็บเข้ารหัสในเครื่อง`);
+    loadAccounts();
+  } else {
+    feedLine("error", `เพิ่มบัญชีไม่สำเร็จ: ${d.detail || res.status}`);
+  }
+}
+
+async function deleteAccount(id) {
+  try {
+    const res = await fetch(BASE + "/accounts/" + encodeURIComponent(id), { method: "DELETE" });
+    if (res.ok) { feedLine("ln", "ถอดบัญชีแล้ว"); loadAccounts(); }
+    else feedLine("error", `ถอดบัญชีไม่สำเร็จ (${res.status})`);
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
+}
+
 /* ---------- github (M9-3) ---------- */
 
 function renderGithubStatus(g) {
@@ -906,17 +976,19 @@ async function loadAvailableModels(force) {
 function fillModelSelect(sel, opts, current) {
   sel.innerHTML = "";
   let matched = false;
+  const curAcc = (current && current.account_id) || "";
   for (const o of opts) {
     const op = document.createElement("option");
-    op.value = o.provider + "|" + o.model;
+    op.value = o.provider + "|" + o.model + "|" + (o.account_id || "");  // M14-9 — พา account_id
     op.textContent = o.label;
-    if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
+    if (current && current.provider === o.provider && current.model === o.model
+        && curAcc === (o.account_id || "")) { op.selected = true; matched = true; }
     sel.appendChild(op);
   }
   if (current && current.model && !matched) {
-    // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่ key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
+    // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่บัญชี/key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
     const op = document.createElement("option");
-    op.value = current.provider + "|" + current.model;
+    op.value = current.provider + "|" + current.model + "|" + curAcc;
     op.textContent = (current.provider !== "ollama" ? "☁ " : "") + current.provider + "/" + current.model + " (ปัจจุบัน)";
     op.selected = true;
     sel.appendChild(op);
@@ -924,8 +996,8 @@ function fillModelSelect(sel, opts, current) {
 }
 
 function parseModelVal(v) {
-  const i = String(v).indexOf("|");
-  return { provider: v.slice(0, i), model: v.slice(i + 1) };
+  const p = String(v).split("|");   // provider|model|account_id (account_id optional, M14-9)
+  return { provider: p[0] || "", model: p[1] || "", account_id: p[2] || "" };
 }
 
 /* ---------- onboarding / CEO (M8) ---------- */
