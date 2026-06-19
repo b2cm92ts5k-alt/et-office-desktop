@@ -793,29 +793,28 @@ async function saveKey() {
   }
 }
 
-/* ---------- Provider Accounts (M14-10) — api_key + Claude OAuth ---------- */
-const AUTH_BADGE = { oauth: "🔑 OAuth", api_key: "🗝 API key" };
+/* ---------- Provider Accounts (M14-10) — Claude OAuth login (api key อยู่ section API KEYS) ---------- */
 
 async function loadAccounts() {
   let data = { accounts: [], providers: [] };
   try { data = await (await fetch(BASE + "/accounts")).json(); } catch {}
-  // ปุ่ม Login with Claude — โชว์เฉพาะเมื่อ OAuth พร้อมใช้จริง (ลงทะเบียน client_id แล้ว)
-  // ไม่งั้นซ่อนไว้ ไม่ให้ CEO งง — เหลือทางเดียวคือ API key ที่ใช้ได้เลย
-  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth && p.oauth_ready);
+  // LOGIN section = ปุ่ม Login with Claude (OAuth subscription) เท่านั้น — API key อยู่ section ถัดไป
+  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth);
   const loginBox = document.getElementById("acc-oauth");
   if (loginBox) {
     loginBox.innerHTML = claude
       ? `<button class="neon-btn" onclick="connectOAuth('claude')">เข้าสู่ระบบด้วย Claude (subscription)</button>`
       : "";
   }
+  // list = เฉพาะบัญชีที่ login ผ่าน OAuth (api key โชว์ในส่วน API KEYS)
+  const oauth = (data.accounts || []).filter(a => a.auth_mode === "oauth");
   const box = document.getElementById("accounts-list");
-  if (box) box.innerHTML = (data.accounts || []).length
-    ? data.accounts.map(a =>
+  if (box) box.innerHTML = oauth.length
+    ? oauth.map(a =>
         `<div class="key-item"><span class="key-chip on">${esc(a.provider)}</span> `
-        + `<span class="sm">${AUTH_BADGE[a.auth_mode] || a.auth_mode}</span> ${esc(a.label)} `
-        + `<code>${esc(a.auth_mode === "oauth" ? "·login·" : a.masked)}</code> `
-        + `<button class="ghost sm" onclick="deleteAccount('${esc(a.id)}')">✕ ถอด</button></div>`).join("")
-    : `<div class="dim">ยังไม่มีบัญชี — เพิ่ม API key หรือ login ด้านบน</div>`;
+        + `🔑 ${esc(a.label)} `
+        + `<button class="ghost sm" onclick="deleteAccount('${esc(a.id)}')">✕ ออกจากระบบ</button></div>`).join("")
+    : `<div class="dim">ยังไม่ได้ login — กดปุ่มด้านบน (ใช้ค่าสมาชิก Claude)</div>`;
 }
 
 async function connectOAuth(provider) {
@@ -830,28 +829,6 @@ async function connectOAuth(provider) {
     feedLine("ln", `เปิดหน้า login ${provider} แล้ว — ยินยอมในเบราว์เซอร์ เสร็จแล้วกลับมา`);
     setTimeout(loadAccounts, 4000);   // เด้งรีเฟรชหลัง callback (เผื่อ login เร็ว)
   } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
-}
-
-async function addAccountKey() {
-  const provider = document.getElementById("acc-provider").value;
-  const label = document.getElementById("acc-label").value.trim();
-  const key = document.getElementById("acc-key").value.trim();
-  if (!key) return;
-  feedLine("ln", `กำลังตรวจสอบ key ${provider}…`);
-  const res = await fetch(BASE + "/accounts/api-key", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider, label, key, validate: true }),
-  });
-  const d = await res.json();
-  if (res.ok) {
-    document.getElementById("acc-key").value = "";
-    document.getElementById("acc-label").value = "";
-    const n = (d.models || []).length;
-    feedLine("done", `เพิ่มบัญชี ${provider} แล้ว${n ? ` (${n} model พร้อมใช้)` : ""} — เก็บเข้ารหัสในเครื่อง`);
-    loadAccounts();
-  } else {
-    feedLine("error", `เพิ่มบัญชีไม่สำเร็จ: ${d.detail || res.status}`);
-  }
 }
 
 async function deleteAccount(id) {

@@ -101,23 +101,11 @@
       <div id="gh-status" class="set-row"></div>
       <div class="warn-note">ใช้ fine-grained token</div>
 
-      <h3>ACCOUNTS — login / เชื่อมบัญชี (M14)</h3>
+      <h3>LOGIN — Claude subscription</h3>
       <div id="acc-oauth" class="set-row"></div>
-      <div class="set-row key-row">
-        <select id="acc-provider">
-          <option value="claude">Claude</option>
-          <option value="gemini">Gemini</option>
-          <option value="openai">OpenAI</option>
-          <option value="grok">Grok (xAI)</option>
-          <option value="deepseek">DeepSeek</option>
-        </select>
-        <input id="acc-label" type="text" placeholder="ชื่อเล่น เช่น งานหลัก" autocomplete="off" style="max-width:110px">
-        <input id="acc-key" type="password" placeholder="วาง API key…" autocomplete="off">
-        <button class="neon-btn" onclick="addAccountKey()">ADD</button>
-      </div>
       <div id="accounts-list" class="set-row"></div>
 
-      <h3>API KEYS — cloud (legacy M11-14, optional)</h3>
+      <h3>API KEYS — cloud (optional)</h3>
       <div class="set-row key-row">
         <select id="key-provider">
           <option value="claude">Claude</option>

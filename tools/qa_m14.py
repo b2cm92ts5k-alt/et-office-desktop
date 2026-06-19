@@ -179,11 +179,11 @@ def main() -> None:
     web = Path(__file__).resolve().parent.parent / "sidebar" / "web"
     appjs = (web / "app.js").read_text(encoding="utf-8")
     html = (web / "index.html").read_text(encoding="utf-8")
-    check("app.js มีฟังก์ชัน account ครบ", all(f in appjs for f in ("loadAccounts", "connectOAuth", "addAccountKey", "deleteAccount")))
+    check("app.js มีฟังก์ชัน account ครบ", all(f in appjs for f in ("loadAccounts", "connectOAuth", "deleteAccount")))
     check("model dropdown พา account_id (3-part)", 'o.account_id || ""' in appjs and "p[2]" in appjs)
-    check("index.html มี ACCOUNTS section ids", all(f'id="{i}"' in html for i in ("acc-oauth", "acc-provider", "acc-key", "accounts-list")))
-    check("OAuth login button gated on oauth_ready", "oauth_ready" in appjs)  # M14-11 banner ถอดออกตามคำขอ CEO; ปุ่มซ่อนจนกว่าจะตั้ง client_id
-    check("provider select มี grok+deepseek", 'value="grok"' in html and 'value="deepseek"' in html)
+    check("LOGIN section = Login button + list (ไม่มี key form)", 'id="acc-oauth"' in html and 'id="accounts-list"' in html and 'id="acc-key"' not in html)
+    check("ปุ่ม Login with Claude (OAuth)", "connectOAuth('claude')" in appjs)  # M14-11 banner ถอดตามคำขอ CEO; LOGIN=ปุ่มอย่างเดียว, API key อยู่ section แยก
+    check("provider select (API KEYS) มี grok+deepseek", 'value="grok"' in html and 'value="deepseek"' in html)
 
     # ---------- สรุป ----------
     passed = sum(1 for ok, _, _ in _results if ok)
