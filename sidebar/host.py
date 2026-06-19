@@ -99,6 +99,12 @@ class SidebarWindow:
                         elif mtype == "proposal.created":
                             tray.notify("💡 ข้อเสนอใหม่จากทีม",
                                         _trim(data.get("title", ""), 120))
+                        elif mtype == "proposal.completed":   # M13-4
+                            tray.notify("✓ ข้อเสนอทำเสร็จแล้ว",
+                                        _trim(data.get("title", ""), 120))
+                        elif mtype == "proposal.failed":      # M13-4
+                            tray.notify("✘ ข้อเสนอล้มเหลว",
+                                        _trim(data.get("title") or data.get("error", ""), 120))
                         elif mtype == "wallpaper.conflict":
                             apps = ", ".join(data.get("apps", []))
                             tray.notify(

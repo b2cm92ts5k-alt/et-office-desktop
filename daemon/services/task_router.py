@@ -36,6 +36,18 @@ from .tool_executor import (
     TOOLS_SPEC, WorkspaceError, execute, summarize, tool_allowed, workspace_root)
 from .ws_manager import ws_manager
 
+# M13-7 — โหมดคุยเล่น: บังคับ JSON {reply, work} (constrained เหมือน M11-1) แทน text marker
+# ที่ qwen3 เล็กทำหลุดบ่อย — work=true เมื่อผู้ใช้ขอให้ลงมือทำงานจริง → escalate เป็น task
+CHAT_SNIPPET = 160      # ความยาว bubble ที่ส่งให้ Godot โชว์เหนือหัว agent
+_CHAT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reply": {"type": "string"},
+        "work": {"type": "boolean"},
+    },
+    "required": ["reply", "work"],
+}
+
 MAX_STEPS = 10          # action สูงสุดต่อ task — กัน loop ไม่รู้จบ
 MAX_PARSE_FAILS = 2     # LLM ตอบไม่เป็น JSON กี่ครั้งถึงยอมรับเป็นคำตอบ text
 MAX_TOOL_FAILS = 3      # tool ไม่รู้จัก/โดนบล็อคติดกันกี่ครั้งถึงยอมแพ้ attempt แล้ว retry
@@ -143,9 +155,19 @@ def _extract_json(text: str) -> dict | None:
 
 
 class TaskRouter:
-    async def route_and_execute(self, message: str) -> TaskLog:
-        """สร้าง task แล้วรันเบื้องหลัง — return ทันทีพร้อม task_id"""
-        agent_cfg = self._match_agent(message)
+    async def route_and_execute(self, message: str, agent_id: str | None = None) -> TaskLog:
+        """สร้าง task แล้วรันเบื้องหลัง — return ทันทีพร้อม task_id
+
+        agent_id: ระบุ agent เป้าหมายตรง ๆ (terminal เลือกผู้รับ, M13-7) — ถ้าเป็น CEO
+        หรือไม่พบ ตกกลับ keyword match (CEO ไม่ทำงานเอง, M13-8).
+        """
+        agent_cfg = None
+        if agent_id:
+            target = registry.get(agent_id)
+            if target and not target.is_ceo:
+                agent_cfg = target
+        if agent_cfg is None:
+            agent_cfg = self._match_agent(message)
         task = TaskLog(message=message, agent_id=agent_cfg.id, agent_name=agent_cfg.name)
         log_service.save_task(task)
         log_service.add("task", f"routing → {agent_cfg.name}: {message[:120]}", agent_cfg.id)
@@ -158,18 +180,33 @@ class TaskRouter:
         asyncio.create_task(self._execute(task, agent_cfg))
         return task
 
-    def _match_agent(self, message: str) -> AgentConfig:
-        """keyword match — agent ที่ keyword ตรงมากสุดชนะ, เสมอ/ไม่เจอ → ตัวแรก"""
+    def _workers(self) -> list[AgentConfig]:
+        """agent ที่รับงานได้จริง — กัน CEO ออก (CEO สั่งงาน ไม่ลงมือเอง, M13-8).
+        เครื่องเปล่ามีแต่ CEO → ยอมคืน CEO กันระบบค้าง (ไม่มีใครรับงาน)"""
         agents = registry.all()
         if not agents:
             raise RuntimeError("ไม่มี agent ใน registry")
+        return [a for a in agents if not a.is_ceo] or agents
+
+    def _default_agent(self, agents: list[AgentConfig]) -> AgentConfig:
+        """fallback เมื่อ keyword ไม่ตรง — Producer/เลขาฯ รับงานทั่วไปแล้วกระจายต่อ
+        (M13-8) ไม่ใช่ agents[0] แบบสุ่มซึ่งทำให้ทุกงานไหลเข้าตัวแรก (เคยเป็น CEO)"""
+        for a in agents:
+            hay = (a.role + " " + a.name).lower()
+            if any(k in hay for k in ("producer", "project manager", "secretary", "เลขา")):
+                return a
+        return agents[0]
+
+    def _match_agent(self, message: str) -> AgentConfig:
+        """keyword match — agent ที่ keyword ตรงมากสุดชนะ, ไม่เจอ → Producer (default)"""
+        agents = self._workers()
         lower = message.lower()
-        best, best_score = agents[0], 0
+        best, best_score = None, 0
         for a in agents:
             score = sum(1 for kw in a.keywords if kw.lower() in lower)
             if score > best_score:
                 best, best_score = a, score
-        return best
+        return best if best is not None else self._default_agent(agents)
 
     def _metrics(self, agent_cfg: AgentConfig, m: dict, started: float) -> dict:
         """ประกอบ field observability ต่อ hop (M11-5, §4.2) ใส่ใน WS event
@@ -228,6 +265,12 @@ class TaskRouter:
         finally:
             permission_gate.finish_task(task.task_id)  # ล้างสิทธิ์อนุมัติยกชุด (M6-8)
             await self._set_status(agent_cfg.id, "idle")
+
+    def run_sync(self, task: TaskLog, agent_cfg: AgentConfig, metrics: dict | None = None) -> str:
+        """รัน 1 task แบบ sync (tool-loop ถ้ามี workspace / ไม่งั้น crew) — ใช้ซ้ำจาก
+        proposal execution (M13-3) ให้ proposal ที่ approve ทำงานจริงผ่าน ToolExecutor +
+        permission gate เหมือนงานปกติ. caller รับผิดชอบ permission_gate.finish_task เอง"""
+        return self._run_agent(task, agent_cfg, metrics)
 
     def _run_agent(self, task: TaskLog, agent_cfg: AgentConfig, metrics: dict | None = None) -> str:
         """sync — เลือกเส้นทาง: workspace ตั้งแล้ว → tool loop (มี retry), ไม่งั้นแชทผ่าน Crew"""
@@ -494,6 +537,57 @@ class TaskRouter:
                     process=Process.sequential, verbose=False)
         result = crew.kickoff()
         return getattr(result, "raw", str(result))
+
+    # --- M13-7: คุยเล่นกับ agent (terminal เลือกผู้รับ) ---
+
+    _CHAT_PROMPT = """{persona}
+
+ตอนนี้คุณกำลัง "คุยเล่น" กับผู้ใช้ (CEO) แบบสบาย ๆ ในออฟฟิศ — ไม่ใช่โหมดสั่งงาน
+ตอบเป็น JSON เท่านั้น: {{"reply": "...", "work": true/false}}
+- reply = ข้อความคุยสั้น กระชับ เป็นกันเอง มีชีวิตชีวา ตามคาแรกเตอร์/หน้าที่ของคุณ (ภาษาเดียวกับผู้ใช้)
+- work = true เมื่อผู้ใช้สั่งให้ลงมือทำงานจริง: มีคำว่า สร้าง/เขียน/แก้/ลบ/ย้าย "ไฟล์", รันคำสั่ง,
+  ค้นข้อมูล, commit/push ฯลฯ. ทักทาย/ถามไถ่/คุยเล่น = false. ถ้า work=true ให้ reply ตอบรับสั้น ๆ ว่ากำลังจะลงมือทำให้
+
+ตัวอย่าง:
+ผู้ใช้: "เป็นไงบ้างวันนี้" → {{"reply": "สบายดีครับ! กำลังคิดไอเดียเกมอยู่เลย 😎", "work": false}}
+ผู้ใช้: "ชอบเกมแนวไหน" → {{"reply": "ผมชอบ roguelike ครับ ลุ้นทุกรอบ!", "work": false}}
+ผู้ใช้: "ช่วยสร้างไฟล์ gdd.md เขียนแนวคิดเกมให้หน่อย" → {{"reply": "ได้เลยครับ เดี๋ยวจัดไฟล์ GDD ให้", "work": true}}
+ผู้ใช้: "แก้ไฟล์ config แล้ว commit ให้ที" → {{"reply": "รับทราบครับ ลงมือเลย", "work": true}}"""
+
+    async def chat(self, message: str, agent_id: str | None = None) -> dict:
+        """คุยเล่นกับ agent (M13-7) — สนทนาธรรมดา ไม่แตะ tool. ถ้าผู้ใช้ขอให้ลงมือทำงานจริง
+        (work=true) เซิร์ฟเวอร์สลับไป task pipeline ผ่าน permission gate ให้อัตโนมัติ
+        ('คุยได้ + ขอให้ทำงานค่อยสลับเป็น task')"""
+        agent = registry.get(agent_id) if agent_id else None
+        if agent is None:
+            agent = self._default_agent(self._workers())
+        reply, wants_work = await asyncio.to_thread(self._chat_reply, agent, message)
+        await ws_manager.broadcast({
+            "type": "agent.chat",
+            "data": {"agent_id": agent.id, "agent": agent.name, "text": reply[:CHAT_SNIPPET]},
+        })
+        result = {"agent_id": agent.id, "agent": agent.name, "reply": reply, "escalated": False}
+        if wants_work:
+            # route_and_execute จัดการ CEO→Producer fallback ให้เอง (M13-8)
+            task = await self.route_and_execute(message, agent_id=agent.id)
+            result.update(escalated=True, task_id=task.task_id, task_agent=task.agent_name)
+        return result
+
+    def _chat_reply(self, agent: AgentConfig, message: str) -> tuple[str, bool]:
+        """sync — คำตอบสนทนา 1 turn ไม่ใช้ tool (รันใน thread) → (reply, wants_work)"""
+        persona = (agent.system_prompt or f"คุณคือ {agent.name} ({agent.role}) ทีมงาน ET Office")[:1500]
+        system = self._CHAT_PROMPT.format(persona=persona)
+        msgs = [{"role": "system", "content": system},
+                {"role": "user", "content": message}]
+        if agent.llm.provider == "ollama":
+            raw = ollama_chat(msgs, schema=_CHAT_SCHEMA, temperature=0.7, think=False)
+        else:
+            raw = str(get_llm(agent.llm, temperature=0.7).call(msgs))
+        data = _extract_json(raw)
+        if isinstance(data, dict) and "reply" in data:
+            return str(data["reply"]).strip(), bool(data.get("work"))
+        # model ไม่ตอบ JSON → ใช้ทั้งก้อนเป็นคำตอบ ไม่ escalate (กันเผลอไปทำงานที่ไม่ได้ขอ)
+        return re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip(), False
 
     async def _set_status(self, agent_id: str, status: str) -> None:
         registry.set_status(agent_id, status)

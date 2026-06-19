@@ -24,6 +24,14 @@
 <!-- overlay ตอนลากไฟล์เข้ามา -->
 <div id="drop-hint">วางไฟล์ที่นี่เพื่อให้ทีมดู 📎</div>
 
+<!-- เลือกผู้รับ + โหมด คุยเล่น/สั่งงาน (M13-7) -->
+<div id="term-controls">
+  <select id="target-agent" title="เลือกผู้รับ">
+    <option value="">อัตโนมัติ (routing)</option>
+  </select>
+  <button type="button" id="mode-btn" class="neon-btn" onclick="toggleMode()" title="สลับโหมด คุยเล่น / สั่งงาน">⚙ สั่งงาน</button>
+</div>
+
 <form id="task-form" onsubmit="submitTask(); return false;">
   <button type="button" class="neon-btn" id="attach-btn" onclick="pickFiles()" title="แนบไฟล์ให้ทีมดู">📎</button>
   <input id="task-input" type="text" placeholder="สั่งงานทีม… (Enter เพื่อส่ง)" autocomplete="off">

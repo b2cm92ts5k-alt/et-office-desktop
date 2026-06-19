@@ -521,7 +521,7 @@ function renderModelMini() {
   const busy = modelCatalogData.team_busy
     ? " · ⛔ ทีมกำลังทำงาน สลับไม่ได้ตอนนี้"
     : "";
-  mini.textContent = `🟢 local ที่ใช้ร่วม: ${active} (agent ที่ตั้ง local ใช้ตัวนี้ทั้งหมด ครั้งละ 1 ตัว • agent ที่ใช้ cloud API ไม่เกี่ยว)${busy}`;
+  mini.textContent = `🟢 local ${active} (agent ที่ตั้ง local ใช้ตัวนี้ทั้งหมด)${busy}`;
 }
 
 function renderModelCatalog() {
@@ -545,30 +545,35 @@ function renderModelCatalog() {
 
 function modelRow(m, installing, hasApp, busy) {
   const rec = m.recommended ? '<span class="rec-badge">แนะนำ</span>' : "";
-  const meta = `<span class="mc-meta">${m.size_gb}GB · ต้อง ${m.min_vram_gb}GB</span>`;
+  const meta = `<span class="mc-meta">use${m.size_gb}GB · VRAM ต้อง ${m.min_vram_gb}GB</span>`;
+  const active = modelCatalogData ? modelCatalogData.active_local_model : "";
+  const onOllama = m.installed || m.app_installed;   // pull ไว้แล้ว → สลับได้ทันที (ไม่ต้อง pull)
+  const delBtn = m.app_installed
+    ? ` <button class="neon-btn sm danger" onclick="askUninstall('${m.tag}')">ลบ</button>` : "";
   let action;
   if (m.tag === installing) {
     action = '<span class="mc-state">กำลังลง…</span>';
-  } else if (m.app_installed) {
-    action = busy
-      ? '<span class="mc-state lock" title="ทีมกำลังทำงาน">⛔ ทีมทำงานอยู่</span>'
-      : (pendingUninstall === m.tag
-        ? `<span class="mc-confirm">ลบ → กลับไปใช้ qwen3 default? <button class="neon-btn sm danger" onclick="doUninstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelUninstall()">ไม่</button></span>`
-        : `<button class="neon-btn sm danger" onclick="askUninstall('${m.tag}')">ลบ</button>`);
-  } else if (m.installed) {
-    action = '<span class="mc-state ok">มีอยู่แล้ว</span>';
-  } else if (m.locked) {
-    action = '<span class="mc-state lock">VRAM ไม่พอ</span>';
+  } else if (m.tag === active) {
+    // ตัวที่ใช้อยู่ — โชว์ชัดว่า active (เคยขึ้นแค่ "มีอยู่แล้ว" จนงงว่าสลับได้ไหม)
+    action = '<span class="mc-state ok">✓ ใช้อยู่</span>' + delBtn;
+  } else if (busy) {
+    action = '<span class="mc-state lock" title="ทีมกำลังทำงาน — รอว่างก่อนสลับ">⛔ ทีมทำงานอยู่</span>';
   } else if (installing) {
     action = '<button class="neon-btn sm" disabled>รอคิว</button>';
-  } else if (busy) {
-    action = '<button class="neon-btn sm" disabled title="ทีมกำลังทำงาน — รอว่างก่อนสลับ">⛔ ทีมทำงานอยู่</button>';
+  } else if (pendingUninstall === m.tag) {
+    action = `<span class="mc-confirm">กลับไปใช้ qwen3 default? <button class="neon-btn sm danger" onclick="doUninstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelUninstall()">ไม่</button></span>`;
+  } else if (onOllama) {
+    // มีบน Ollama แล้วแต่ยังไม่ active → สลับมาใช้ทันทีผ่าน /models/activate (M13-1/2)
+    action = `<button class="neon-btn sm" onclick="doActivate('${m.tag}')">สลับมาใช้</button>${delBtn}`;
+  } else if (m.locked) {
+    action = '<span class="mc-state lock">VRAM ไม่พอ</span>';
   } else if (hasApp) {
-    action = '<button class="neon-btn sm" disabled title="ใช้ได้ครั้งละ 1 ตัว — ลบตัวเดิมก่อน">สลับมาใช้</button>';
+    action = '<button class="neon-btn sm" disabled title="ติดตั้งเพิ่มได้ครั้งละ 1 ตัว — ลบตัวที่ลงผ่านแอปก่อน">ติดตั้ง</button>';
   } else if (pendingInstall === m.tag) {
-    action = `<span class="mc-confirm">โหลด ~${m.size_gb}GB แล้วสลับ agent ที่ใช้ local มาตัวนี้ (cloud agent ไม่เปลี่ยน · แนะนำ restart · อย่าสลับตอนทีมทำงาน)? <button class="neon-btn sm" onclick="doInstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelInstall()">ไม่</button></span>`;
+    action = `<span class="mc-confirm">(อย่าสลับตอนทีมทำงาน)? <button class="neon-btn sm" onclick="doInstall('${m.tag}')">ยืนยัน</button> <button class="neon-btn sm" onclick="cancelInstall()">ไม่</button></span>`;
   } else {
-    action = `<button class="neon-btn sm" onclick="askInstall('${m.tag}')">สลับมาใช้</button>`;
+    // ยังไม่มีบน Ollama → ติดตั้ง (pull) แล้วสลับมาใช้
+    action = `<button class="neon-btn sm" onclick="askInstall('${m.tag}')">ติดตั้ง + ใช้</button>`;
   }
   return `<div class="mc-row ${m.locked ? "locked" : ""}">` +
     `<div class="mc-info"><div class="mc-name">${esc(m.name)} ${rec}</div>` +
@@ -599,6 +604,28 @@ async function doInstall(tag) {
       feedLine("error", esc(e.detail || "ติดตั้งไม่สำเร็จ"));
       renderModelCatalog();
     }
+  } catch {
+    feedLine("error", "ติดต่อ daemon ไม่ได้");
+  }
+}
+
+async function doActivate(tag) {
+  // M13-1/2 — สลับ active local model ไปยังตัวที่มีบน Ollama แล้ว (ไม่ pull ใหม่)
+  try {
+    const res = await fetch(BASE + "/models/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag }),
+    });
+    if (res.ok) {
+      const j = await res.json().catch(() => ({}));
+      if (j.changed === false) feedLine("ln", `${esc(tag)} เป็น model ที่ใช้อยู่แล้ว`);
+      // ถ้า changed=true → daemon broadcast model.switched ซึ่ง refresh + แจ้ง feed ให้เอง
+    } else {
+      const e = await res.json().catch(() => ({}));
+      feedLine("error", esc(e.detail || "สลับ model ไม่สำเร็จ"));
+    }
+    loadModelCatalog();
   } catch {
     feedLine("error", "ติดต่อ daemon ไม่ได้");
   }
@@ -1191,6 +1218,18 @@ function handleEvent(ev) {
     case "proposal.rejected":
       loadProposals();
       break;
+    case "proposal.completed":  // M13-4 — เดิมไม่มี handler → approve แล้วเงียบ (tray toast มาจาก host.py)
+      feedLine("done", `✔ ข้อเสนอเสร็จ — <b>${esc(nameOf(d.agent_id))}</b>: ${esc(trim(d.title, 120))}`);
+      if (d.output) feedLine("ln", esc(trim(d.output, 400)));
+      loadProposals();
+      break;
+    case "proposal.failed":     // M13-4
+      feedLine("error", `✘ ข้อเสนอล้มเหลว: ${esc(trim(d.title, 100))} — ${esc(trim(d.error, 160))}`);
+      loadProposals();
+      break;
+    case "agent.chat":          // M13-7 — agent ตอบคุยเล่น (มาจากที่อื่น/escalate)
+      feedLine("social", `💬 ${esc(nameOf(d.agent_id))}: ${esc(trim(d.text, 200))}`);
+      break;
     case "permission.request":
       pushPerm(d);
       break;
@@ -1219,6 +1258,11 @@ function handleEvent(ev) {
       break;
     case "model.uninstall.done":
       feedLine("done", `🗑 ลบ ${esc(d.tag)} แล้ว — agent ที่ใช้ local กลับไปใช้ ${esc(d.active || "qwen3 default")}`);
+      if (settingsOpen) loadModelCatalog();
+      break;
+    case "model.switched":   // M13-1 — สลับ active local model (ไม่ pull ใหม่)
+      feedLine("done", `🔄 สลับ local model → <b>${esc(d.tag)}</b> แล้ว (เลิกใช้ ${esc(d.prev || "qwen3 default")} · agent ที่ใช้ cloud API ไม่เปลี่ยน)`);
+      feedLine("ln", "agent ที่ตั้ง local ทุกตัวจะใช้ model ใหม่ในงานถัดไปทันที — ไม่ต้อง restart");
       if (settingsOpen) loadModelCatalog();
       break;
     case "qa.ping":

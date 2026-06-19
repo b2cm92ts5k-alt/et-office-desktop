@@ -99,7 +99,7 @@
         <button class="neon-btn" onclick="saveGithubRepo()">SAVE</button>
       </div>
       <div id="gh-status" class="set-row"></div>
-      <div class="warn-note">ใช้ fine-grained token สิทธิ์เฉพาะ repo ที่ต้องการ (Contents + Issues) — token = สิทธิ์เขียน repo จริง เก็บใน .env เครื่องนี้เท่านั้น</div>
+      <div class="warn-note">ใช้ fine-grained token</div>
 
       <h3>API KEYS — cloud (optional)</h3>
       <div class="set-row key-row">
@@ -114,7 +114,7 @@
       </div>
       <div id="key-status" class="set-row"></div>
       <div id="keys-list" class="set-row"></div>
-      <div class="warn-note">ใส่ได้หลาย key ต่อ provider (เช่น Gemini 2 อัน) — เลือกว่า agent ไหนใช้ <b>key/model</b> ไหน ที่ ⚙ ของ agent · 1 key ใช้หลาย model/agent พร้อมกันได้ 💡 ออปชัน: agent ที่ใช้หนักแยก key กัน rate limit (ไม่บังคับ)</div>
+      <div class="warn-note">ใส่ได้หลาย key ต่อ provider แนะนำ agent ที่ใช้หนักให้แยก key กันชน limit เร็วสำหรับฟรี</div>
 
       <h3>LOCAL MODELS — ติดตั้งเพิ่ม (M7)</h3>
       <div id="model-install-banner" class="model-banner hidden">
@@ -122,7 +122,7 @@
         <div class="mib-bar"><div id="mib-fill" class="mib-fill"></div></div>
       </div>
       <div class="set-row">
-        <button class="neon-btn" onclick="openModelsModal()">📦 Local Model แนะนำ / อื่น ๆ…</button>
+        <button class="neon-btn" onclick="openModelsModal()">📦 Local Model อื่น ๆ</button>
       </div>
       <div id="model-mini-status" class="set-row mc-mini">…</div>
 
@@ -133,7 +133,7 @@
         <button class="neon-btn" onclick="addMcp()">ADD</button>
       </div>
       <div id="mcp-list" class="set-row"></div>
-      <div class="warn-note">tools ของ MCP server จะให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;) ผ่าน permission gate เหมือน tool อื่น</div>
+      <div class="warn-note">MCP server ให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;)</div>
 
       <h3>TUNING — multi-agent (M11)</h3>
       <div class="set-row">
@@ -154,7 +154,7 @@
       <div class="set-row">
         <button class="neon-btn danger" onclick="shutdownSystem()">⏻ ปิด ET Office</button>
       </div>
-      <div class="warn-note">ปิด daemon + wallpaper + sidebar ทั้งหมด (เปิดผ่าน launcher จะเก็บกวาดให้ครบ ไม่เหลือ process ค้าง) — หรือพิมพ์ <code>/exit</code> ใน terminal</div>
+      <div class="warn-note">ปิด daemon + wallpaper + sidebar ทั้งหมดหรือพิมพ์ <code>/exit</code> ใน terminal</div>
     </div>
   </section>
 </div>
@@ -224,7 +224,7 @@
 <div id="models-backdrop" class="hidden" onclick="closeModelsModal(event)">
   <div id="models-modal">
     <h2>LOCAL MODELS</h2>
-    <div class="models-sub">เลือกติดตั้ง local model เพิ่ม — ตัวที่ VRAM ไม่พอจะถูกล็อก · ติดตั้งได้ครั้งละ 1 ตัว</div>
+    <div class="models-sub">เลือกติดตั้ง local model — ตัวที่ VRAM ไม่พอจะถูกล็อก · ใช้งานได้ครั้งละ 1 ตัว</div>
     <div id="model-catalog" class="model-catalog"><div class="empty-note">กำลังโหลด…</div></div>
     <div class="modal-actions"><button class="ghost" onclick="closeModelsModal()">ปิด</button></div>
   </div>

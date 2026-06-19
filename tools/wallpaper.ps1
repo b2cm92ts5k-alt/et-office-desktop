@@ -115,8 +115,25 @@ if ($Attach -ne 0) {
     [ETWallpaper]::MoveWindow($child, $relX, $relY, $b.Width, $b.Height, $true) | Out-Null
     Write-Output ("PLACED  : Display1(primary) rel=(" + $relX + "," + $relY + ") size=" + $b.Width + "x" + $b.Height)
 
+    # M13-5: WorkerW ครอบ virtual desktop ทุกจอ — child ถูก clip ไว้เฉพาะจอหลัก ส่วนที่เหลือ
+    # (จอ 2) WorkerW ไม่ถูกวาดใหม่ → ค้างภาพ office เป็น "ผี" นิ่ง ๆ. refresh wallpaper เดิม
+    # จาก registry บังคับ shell วาด WorkerW ใหม่ทั้ง virtual desktop → จออื่นกลับไปเป็น wallpaper จริง
+    # (child บนจอหลักวาดทับเองในเฟรมถัดไป). ถ้า user ไม่ได้ตั้ง wallpaper (สีล้วน) ข้ามไป
+    $wp = (Get-ItemProperty "HKCU:\Control Panel\Desktop" -Name WallPaper -ErrorAction SilentlyContinue).WallPaper
+    if ($wp) {
+        [ETWallpaper]::SystemParametersInfo(0x0014, 0, $wp, 0x01) | Out-Null  # SPI_SETDESKWALLPAPER
+        # SPI refresh อาจทำ shell สร้าง WorkerW ใหม่จน child หลุด parent — ผูกกลับ + วางใหม่ให้ชัวร์
+        if ([ETWallpaper]::GetParent($child) -ne $w) {
+            $w = [ETWallpaper]::GetWallpaperParent()
+            [ETWallpaper]::SetParent($child, $w) | Out-Null
+            [ETWallpaper]::MoveWindow($child, $relX, $relY, $b.Width, $b.Height, $true) | Out-Null
+            Write-Output "REATTACH: child หลุดหลัง refresh — ผูกกลับ WorkerW แล้ว"
+        }
+    }
+
     Write-Output ("ATTACHED: hwnd " + $child + " -> WorkerW " + $w + " (via " + [ETWallpaper]::FoundVia + ")")
     Write-Output ("VERIFY  : GetParent = " + [ETWallpaper]::GetParent($child))
+    Write-Output ("SCREENS : count=" + ([System.Windows.Forms.Screen]::AllScreens.Length) + " virtual=(" + $vs.X + "," + $vs.Y + "," + $vs.Width + "x" + $vs.Height + ")")
     exit 0
 }
 

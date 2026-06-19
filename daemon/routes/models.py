@@ -135,6 +135,35 @@ async def install(req: InstallReq) -> dict:
     return {"accepted": True, "tag": tag}
 
 
+@router.post("/activate")
+async def activate(req: InstallReq) -> dict:
+    """สลับ active local model ไปยังตัวที่ pull ไว้บน Ollama แล้ว (ไม่ pull ใหม่) — M13-1
+
+    ก่อนหน้านี้ UI มีแค่ install/uninstall ทำให้สลับไป model ที่มีอยู่แล้วไม่ได้ (กดแล้วเงียบ
+    เพราะ install เด้ง 400 'ติดตั้งไว้แล้ว'). endpoint นี้แค่เปลี่ยน setting active_local_model
+    ซึ่งเป็น chokepoint — ทุก ollama agent เด้งมาใช้ตัวใหม่ทันทีตอน get_llm ครั้งถัดไป ไม่ต้อง restart
+    """
+    tag = req.tag.strip()
+    if not tag:
+        raise HTTPException(400, "ไม่ได้ระบุ model")
+    if _installing_tag:
+        raise HTTPException(409, f"กำลังติดตั้ง {_installing_tag} อยู่ — รอให้เสร็จก่อน")
+    if _team_busy():
+        raise HTTPException(409, "ทีมกำลังทำงานอยู่ — รอให้ทีมว่างก่อนค่อยสลับ local model")
+    if tag not in set(ollama_list_installed()):
+        raise HTTPException(400, f"{tag} ยังไม่ได้ติดตั้งบน Ollama — กดติดตั้งก่อนถึงจะสลับมาใช้ได้")
+    prev = active_local_tag()
+    if tag == prev:
+        return {"active": tag, "prev": prev, "changed": False}
+    settings_store.update({"active_local_model": tag})
+    # ปลดตัวเก่าออกจาก VRAM ทันที — กัน resident 2 ตัวช่วงสลับ (กฎ 1-active-local)
+    if prev and prev != tag:
+        ollama_unload(prev)
+    await ws_manager.broadcast({"type": "model.switched",
+                                "data": {"tag": tag, "active": tag, "prev": prev}})
+    return {"active": tag, "prev": prev, "changed": True}
+
+
 @router.post("/uninstall")
 async def uninstall(req: InstallReq) -> dict:
     """ลบ model — เฉพาะตัวที่ลงผ่านแอป (track ใน installed_models) เท่านั้น (M7-4)

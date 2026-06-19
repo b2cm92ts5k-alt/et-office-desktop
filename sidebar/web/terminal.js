@@ -13,6 +13,7 @@ const MIN_W = 300, MIN_H = 220;   // ต้องตรงกับ TERMINAL_MIN
 let agents = {};
 let ws = null;
 let attached = [];   // ไฟล์ที่ลากใส่ รอแนบ task ถัดไป (M9-2)
+let chatMode = false;   // M13-7 — false = สั่งงาน (task), true = คุยเล่น (chat)
 
 /* ---------- drag & drop ไฟล์ (M9-2) ---------- */
 
@@ -98,11 +99,42 @@ async function loadAgents() {
     const list = await (await fetch(BASE + "/agents")).json();
     agents = {};
     for (const a of list) agents[a.id] = a;
+    renderAgentPicker();
   } catch { /* daemon down — WS reconnect จะโหลดใหม่เอง */ }
 }
 
 function nameOf(agentId) {
   return agents[agentId] ? agents[agentId].name : agentId;
+}
+
+/* ---------- M13-7: เลือกผู้รับ + โหมดคุยเล่น/สั่งงาน ---------- */
+
+function renderAgentPicker() {
+  const sel = document.getElementById("target-agent");
+  if (!sel) return;
+  const cur = sel.value;
+  let html = '<option value="">อัตโนมัติ (routing)</option>';
+  for (const a of Object.values(agents)) {
+    const tag = a.is_ceo ? "👑 " : "";
+    html += `<option value="${esc(a.id)}">${tag}${esc(a.name)}</option>`;
+  }
+  sel.innerHTML = html;
+  if (cur && agents[cur]) sel.value = cur;   // คงตัวที่เลือกไว้
+}
+
+function toggleMode() {
+  chatMode = !chatMode;
+  const btn = document.getElementById("mode-btn");
+  const input = document.getElementById("task-input");
+  if (chatMode) {
+    btn.textContent = "💬 คุยเล่น";
+    btn.classList.add("chat");
+    input.placeholder = "คุยเล่นกับ agent… (ขอให้ทำงานจริงจะสลับเป็นสั่งงานให้)";
+  } else {
+    btn.textContent = "⚙ สั่งงาน";
+    btn.classList.remove("chat");
+    input.placeholder = "สั่งงานทีม… (Enter เพื่อส่ง)";
+  }
 }
 
 async function submitTask() {
@@ -117,6 +149,27 @@ async function submitTask() {
     catch { feedLine("error", "ส่งคำสั่งปิดไม่ได้ — daemon เปิดอยู่ไหม?"); }
     return;
   }
+  const targetId = document.getElementById("target-agent").value || "";
+
+  // โหมดคุยเล่น (M13-7) — ไม่แนบไฟล์/ไม่รัน tool, แค่สนทนา
+  if (chatMode) {
+    feedLine("user", `&gt; ${esc(msg)}`);
+    try {
+      const res = await fetch(BASE + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg, agent_id: targetId }),
+      });
+      const data = await res.json();
+      feedLine("social", `💬 <b>${esc(data.agent)}</b>: ${esc(data.reply)}`);
+      if (data.escalated)
+        feedLine("route", `→ สลับเป็นสั่งงานจริงให้ <b>${esc(data.task_agent || data.agent)}</b> — คำขออนุญาตจะเด้งใน panel หลัก`);
+    } catch {
+      feedLine("error", "คุยไม่ได้ — คุยได้เฉพาะ Local Model — daemon เปิดอยู่ไหม?");
+    }
+    return;
+  }
+
   // แนบ path ไฟล์ที่ลากใส่เข้า context ให้ agent อ่านต่อ (อยู่ใน workspace แล้ว)
   const note = attached.length
     ? `[ไฟล์แนบใน workspace: ${attached.map(a => a.rel).join(", ")}]\n`
@@ -129,7 +182,7 @@ async function submitTask() {
     const res = await fetch(BASE + "/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: sent }),
+      body: JSON.stringify({ message: sent, agent_id: targetId }),
     });
     const data = await res.json();
     const cfg = Object.values(agents).find(a => a.name === data.agent);

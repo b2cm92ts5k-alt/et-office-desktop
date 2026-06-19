@@ -12,6 +12,10 @@ build/
 dist/
 .pytest_cache/
 
+# --- debug / scratch ---
+_vdesktop.png
+*_vdesktop.png
+
 # --- data (runtime) ---
 *.sqlite
 *.sqlite3
