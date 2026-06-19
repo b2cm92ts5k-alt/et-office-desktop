@@ -129,6 +129,9 @@ def main() -> None:
     check("model dropdown พา account_id (3-part)", 'o.account_id || ""' in appjs and "p[2]" in appjs)
     check("LOGIN/OAuth UI ถูกถอด", "connectOAuth" not in appjs and 'id="acc-oauth"' not in html and "LOGIN — Claude subscription" not in html)
     check("API KEYS section + provider grok/deepseek", "API KEYS" in html and 'value="grok"' in html and 'value="deepseek"' in html)
+    # M14 consolidation — key store เดียว (account_store DPAPI), เลิก /settings/keys + m-key dropdown ใน UI
+    check("UI key form ใช้ /accounts/api-key (ไม่ใช่ /settings/keys)", "/accounts/api-key" in appjs and "/settings/keys" not in appjs)
+    check("m-key dropdown ถูกถอด (account ผูกกับ model)", "refreshKeyDropdown" not in appjs and 'id="m-key"' not in html)
 
     # ---------- สรุป ----------
     passed = sum(1 for ok, _, _ in _results if ok)

@@ -741,16 +741,16 @@ async function respondPerm(decision) {
 
 function renderKeyStatus() {
   document.getElementById("key-status").innerHTML =
-    ["claude", "gemini", "openai"].map(p => {
+    ["claude", "gemini", "openai", "grok", "deepseek"].map(p => {
       const on = keyStatus[p];
       return `<span class="key-chip ${on ? "on" : ""}">${p}: ${on ? "✓ set" : "—"}</span>`;
     }).join(" ");
 }
 
-// M11-14 — โหลด+แสดงรายการ key (หลายอันต่อ provider ได้) + ปุ่มลบ
+// M14 — บัญชี API key เก็บใน account_store (เข้ารหัส DPAPI) — ที่เดียว ผ่าน /accounts (เลิกใช้ legacy keys store)
 let cloudKeys = [];
 async function loadKeys() {
-  try { cloudKeys = (await (await fetch(BASE + "/settings/keys")).json()).keys || []; }
+  try { cloudKeys = (await (await fetch(BASE + "/accounts")).json()).accounts || []; }
   catch { cloudKeys = []; }
   keyStatus = {};
   for (const k of cloudKeys) keyStatus[k.provider] = true;
@@ -766,7 +766,7 @@ async function loadKeys() {
 
 async function deleteKey(id) {
   try {
-    const res = await fetch(BASE + "/settings/keys/" + encodeURIComponent(id), { method: "DELETE" });
+    const res = await fetch(BASE + "/accounts/" + encodeURIComponent(id), { method: "DELETE" });
     if (res.ok) { feedLine("ln", "ลบ key แล้ว"); loadKeys(); }
     else feedLine("error", `ลบ key ไม่สำเร็จ (${res.status})`);
   } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
@@ -777,18 +777,21 @@ async function saveKey() {
   const label = document.getElementById("key-label").value.trim();
   const key = document.getElementById("key-value").value.trim();
   if (!key) return;
-  const res = await fetch(BASE + "/settings/keys", {
+  feedLine("ln", `กำลังตรวจสอบ key ${provider}…`);
+  const res = await fetch(BASE + "/accounts/api-key", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider, label, key }),
+    body: JSON.stringify({ provider, label, key, validate: true }),
   });
+  const d = await res.json().catch(() => ({}));
   if (res.ok) {
     document.getElementById("key-value").value = "";
     document.getElementById("key-label").value = "";
-    feedLine("done", `เพิ่ม ${provider} key แล้ว (เก็บ local เครื่องนี้เท่านั้น)`);
+    const n = (d.models || []).length;
+    feedLine("done", `เพิ่ม ${provider} key แล้ว${n ? ` (${n} model พร้อมใช้)` : ""} — เข้ารหัสเก็บในเครื่อง`);
     loadKeys();
   } else {
-    feedLine("error", `เพิ่ม key ไม่สำเร็จ (${res.status})`);
+    feedLine("error", `เพิ่ม key ไม่สำเร็จ: ${d.detail || res.status}`);
   }
 }
 
@@ -990,24 +993,7 @@ async function openModelPicker(agentId) {
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3
-  document.getElementById("m-model").onchange = () => refreshKeyDropdown();  // M11-14
-  await refreshKeyDropdown(a);
   document.getElementById("model-backdrop").classList.remove("hidden");
-}
-
-// M11-14 — โชว์ dropdown เลือก key เฉพาะเมื่อ model ที่เลือกเป็น cloud (กรองตาม provider)
-async function refreshKeyDropdown(agent) {
-  const row = document.getElementById("m-key-row");
-  const ksel = document.getElementById("m-key");
-  if (!row || !ksel) return;
-  const { provider } = parseModelVal(document.getElementById("m-model").value || "");
-  if (provider === "ollama" || !provider) { row.classList.add("hidden"); return; }
-  let keys = [];
-  try { keys = (await (await fetch(BASE + "/settings/keys?provider=" + encodeURIComponent(provider))).json()).keys || []; } catch {}
-  const cur = agent && agent.key_id ? agent.key_id : "";
-  ksel.innerHTML = `<option value="">(default — key แรกของ ${esc(provider)})</option>`
-    + keys.map(k => `<option value="${esc(k.id)}"${k.id === cur ? " selected" : ""}>${esc(k.label)} ${esc(k.masked)}</option>`).join("");
-  row.classList.remove("hidden");
 }
 
 // M11-3 — สร้าง checklist ของ tool ในโมดัล (ติ๊กตาม allowed_tools; ว่าง = ไม่ติ๊กเลย = ทุก tool)
@@ -1065,12 +1051,11 @@ async function saveModel() {
   const thinking_mode = document.getElementById("m-thinking").checked;            // M11-8
   const allowed_tools = [...document.querySelectorAll("#m-tools input:checked")]   // M11-3
     .map(c => c.value);
-  const keyRow = document.getElementById("m-key-row");                             // M11-14
-  const key_id = keyRow.classList.contains("hidden") ? "" : document.getElementById("m-key").value;
+  // account_id ผูกมากับ model dropdown แล้ว (M14-9) — ไม่ต้องมี key dropdown แยก
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ llm, thinking_mode, allowed_tools, key_id }),
+    body: JSON.stringify({ llm, thinking_mode, allowed_tools }),
   });
   if (res.ok) {
     const toolNote = allowed_tools.length ? `, ${allowed_tools.length} tool` : "";
