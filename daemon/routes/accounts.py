@@ -8,22 +8,33 @@ OAuth ของ subscription (ผิด ToS). ทางที่ถูกกฎ 
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..adapters.llm_adapter import ENV_KEY_MAP, validate_cloud_key
-from ..services.account_store import account_store
+from ..services.account_store import account_store, mask
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
 @router.get("")
 def list_accounts(provider: str = "") -> dict:
-    """รายการบัญชี (masked) + provider ที่รองรับ"""
-    return {
-        "accounts": account_store.all_public(provider),
-        "providers": [{"provider": p} for p in ENV_KEY_MAP],
-    }
+    """รายการ credential ทุกแหล่ง (masked): account_store (DPAPI) + default จาก .env
+
+    รวม .env เข้ามาด้วย (เหมือน M11-14) ไม่งั้น key ที่ตั้งใน .env จะมองไม่เห็น/ลบไม่ได้
+    แต่ /models/available ยังเห็น → model โผล่ทั้งที่ UI ว่าง (bug).
+    """
+    accounts = list(account_store.all_public(provider))
+    for prov, env in ENV_KEY_MAP.items():
+        if provider and prov != provider:
+            continue
+        v = os.environ.get(env)
+        if v:
+            accounts.append({"id": f"env:{prov}", "provider": prov, "label": "default (.env)",
+                             "auth_mode": "env", "masked": mask(v)})
+    return {"accounts": accounts, "providers": [{"provider": p} for p in ENV_KEY_MAP]}
 
 
 class ApiKeyAccountReq(BaseModel):
@@ -53,6 +64,16 @@ def add_api_key_account(payload: ApiKeyAccountReq) -> dict:
 
 @router.delete("/{account_id}")
 def delete_account(account_id: str) -> dict:
+    # env:<provider> = เคลียร์ key default ใน .env (มีผลทันที)
+    if account_id.startswith("env:"):
+        prov = account_id.split(":", 1)[1]
+        env = ENV_KEY_MAP.get(prov)
+        if not env:
+            raise HTTPException(404, "provider ไม่ถูกต้อง")
+        from .settings import _write_env_value
+        _write_env_value(env, "")
+        os.environ.pop(env, None)
+        return {"deleted": account_id}
     if not account_store.delete(account_id):
         raise HTTPException(404, "ไม่พบบัญชีนี้")
     return {"deleted": account_id}
