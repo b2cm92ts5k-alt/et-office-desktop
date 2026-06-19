@@ -799,13 +799,13 @@ const AUTH_BADGE = { oauth: "🔑 OAuth", api_key: "🗝 API key" };
 async function loadAccounts() {
   let data = { accounts: [], providers: [] };
   try { data = await (await fetch(BASE + "/accounts")).json(); } catch {}
-  // ปุ่ม Login with Claude — โชว์เฉพาะ provider ที่รองรับ OAuth
-  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth);
+  // ปุ่ม Login with Claude — โชว์เฉพาะเมื่อ OAuth พร้อมใช้จริง (ลงทะเบียน client_id แล้ว)
+  // ไม่งั้นซ่อนไว้ ไม่ให้ CEO งง — เหลือทางเดียวคือ API key ที่ใช้ได้เลย
+  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth && p.oauth_ready);
   const loginBox = document.getElementById("acc-oauth");
   if (loginBox) {
     loginBox.innerHTML = claude
       ? `<button class="neon-btn" onclick="connectOAuth('claude')">เข้าสู่ระบบด้วย Claude (subscription)</button>`
-        + (claude.oauth_ready ? "" : ` <span class="dim sm">— ต้องตั้ง OAuth client_id ก่อน (ENV)</span>`)
       : "";
   }
   const box = document.getElementById("accounts-list");

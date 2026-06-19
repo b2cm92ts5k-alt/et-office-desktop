@@ -182,7 +182,7 @@ def main() -> None:
     check("app.js มีฟังก์ชัน account ครบ", all(f in appjs for f in ("loadAccounts", "connectOAuth", "addAccountKey", "deleteAccount")))
     check("model dropdown พา account_id (3-part)", 'o.account_id || ""' in appjs and "p[2]" in appjs)
     check("index.html มี ACCOUNTS section ids", all(f'id="{i}"' in html for i in ("acc-oauth", "acc-provider", "acc-key", "accounts-list")))
-    check("M14-11 banner Subscription vs API", "ใช้ยิงจากแอปไม่ได้" in html and "มีแค่ Claude" in html)
+    check("OAuth login button gated on oauth_ready", "oauth_ready" in appjs)  # M14-11 banner ถอดออกตามคำขอ CEO; ปุ่มซ่อนจนกว่าจะตั้ง client_id
     check("provider select มี grok+deepseek", 'value="grok"' in html and 'value="deepseek"' in html)
 
     # ---------- สรุป ----------
