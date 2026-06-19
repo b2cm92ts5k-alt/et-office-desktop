@@ -66,13 +66,27 @@ ENV_KEY_MAP = {
     "claude": "ANTHROPIC_API_KEY",
     "gemini": "GOOGLE_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "grok": "XAI_API_KEY",        # M14-2 — xAI (console.x.ai)
+    "deepseek": "DEEPSEEK_API_KEY",  # M14-2 — DeepSeek (platform.deepseek.com)
 }
 
 DEFAULT_CLOUD_MODELS = {
     "claude": "claude-sonnet-4-6",
     "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o",
+    "grok": "grok-4.1-fast",       # ตัวถูก+เร็ว เป็น default ปลอดภัย
+    "deepseek": "deepseek-v4-flash",
 }
+
+# M14-2 — LiteLLM provider prefix ต่อ provider (CrewAI LLM ส่งต่อ litellm).
+# deepseek เป็น native provider ของ litellm → "deepseek/" ตรง ๆ.
+LLM_PREFIX = {"claude": "anthropic", "gemini": "gemini", "openai": "openai",
+              "deepseek": "deepseek"}
+
+# M14-2 — provider ที่ litellm ไม่มี native แต่ endpoint เป็น OpenAI-compatible → route ผ่าน
+# "openai/<model>" + base_url. Grok (xAI) ไม่มี native provider "xai" ใน CrewAI build นี้
+# (และไม่ได้ลง litellm fallback) จึงต้องยิงแบบ openai-compatible ที่ api.x.ai/v1.
+CLOUD_BASE_URL = {"grok": "https://api.x.ai/v1"}
 
 
 class MissingAPIKeyError(Exception):
@@ -122,12 +136,66 @@ CLOUD_CATALOG: dict[str, list[dict]] = {
         {"model": "o1",           "label": "o1",           "tier": "paid", "in": 15,  "out": 60},
         {"model": "o1-pro",       "label": "o1-Pro",       "tier": "paid", "in": 150, "out": 180},
     ],
+    # M14-3 — Grok (xAI). id อ้างชื่อจากภาพ CEO (มิ.ย.2026); ปรับให้ตรง API จริงได้ที่นี่ที่เดียว
+    "grok": [
+        {"model": "grok-4.3",        "label": "Grok 4.3 (flagship · 1M ctx)", "tier": "paid", "in": 5,   "out": 15},
+        {"model": "grok-4.20",       "label": "Grok 4.20 (reasoning)",        "tier": "paid", "in": 3,   "out": 15},
+        {"model": "grok-4.1-fast",   "label": "Grok 4.1 Fast",                "tier": "paid", "in": 0.5, "out": 2},
+        {"model": "grok-build-0.1",  "label": "Grok Build 0.1 (coding)",      "tier": "paid", "in": 2,   "out": 10},
+    ],
+    # M14-3 — DeepSeek (ไม่มี subscription — API key ล้วน). ราคาถูกมากเป็นจุดขาย
+    "deepseek": [
+        {"model": "deepseek-v4-flash", "label": "DeepSeek V4-Flash",            "tier": "paid", "in": 0.3, "out": 1.1},
+        {"model": "deepseek-v4-pro",   "label": "DeepSeek V4-Pro (1.6T MoE)",   "tier": "paid", "in": 0.6, "out": 2.2},
+    ],
 }
 
 
 def cloud_models(provider: str) -> list[dict]:
     """รายชื่อ cloud model ของ provider (M11-13) — ว่าง = provider นั้นไม่มี catalog"""
     return CLOUD_CATALOG.get(provider, [])
+
+
+# M14-5 — endpoint สำหรับ validate API key (ping ดูว่า key ใช้ได้ + ดึงรายชื่อ model จริง)
+# header ต่อ provider ต่างกัน: claude=x-api-key, openai/grok/deepseek=Bearer, gemini=?key=
+_VALIDATE_EP: dict[str, dict] = {
+    "claude":   {"url": "https://api.anthropic.com/v1/models",
+                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
+    "openai":   {"url": "https://api.openai.com/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "grok":     {"url": "https://api.x.ai/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "deepseek": {"url": "https://api.deepseek.com/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "gemini":   {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
+                 "headers": lambda k: {}},
+}
+
+
+def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
+    """ping provider ด้วย key → {ok, models?, error?} (M14-5)
+
+    เรียก endpoint list-models ที่ราคาถูก/ฟรี — 200 = key ใช้ได้ + ดึง id model จริงมาด้วย
+    (เก็บเป็น allowed_models ของ account). 401/403 = key ผิด. ไม่ log/ไม่คาย key.
+    """
+    import urllib.error
+    import urllib.request
+    ep = _VALIDATE_EP.get(provider)
+    if not ep:
+        return {"ok": False, "error": f"provider {provider} ไม่รองรับ validate"}
+    url = ep["url"].format(k=key)
+    req = urllib.request.Request(url, headers=ep["headers"](key), method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        items = data.get("data") or data.get("models") or []
+        models = [m.get("id") or m.get("name", "") for m in items if isinstance(m, dict)]
+        return {"ok": True, "models": [m for m in models if m]}
+    except urllib.error.HTTPError as e:
+        msg = "key ไม่ถูกต้อง/หมดอายุ" if e.code in (401, 403) else f"HTTP {e.code}"
+        return {"ok": False, "error": msg}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"เชื่อมต่อไม่ได้: {str(e)[:80]}"}
 
 
 def cloud_price(provider: str, model: str) -> tuple[float, float] | None:
@@ -157,10 +225,50 @@ def available_cloud_providers() -> dict:
             for prov, env in ENV_KEY_MAP.items()}
 
 
-def _resolve_cloud_key(provider: str, key_id: str = "") -> str:
-    """หา API key จริงของ cloud call (M11-14): key_id ระบุ → จาก store; ไม่งั้น default
-    = .env ก่อน แล้วค่อย key แรกใน store. agent เก็บแค่ key_id ไม่เก็บ secret.
+_OAUTH_REFRESH_SKEW = 120  # refresh ล่วงหน้าก่อนหมดอายุ 2 นาที (กันชนกลางสาย)
+
+
+def _oauth_access_token(account_id: str, acc: dict) -> str:
+    """คืน access_token ของ oauth account — refresh อัตโนมัติถ้าใกล้/เลยหมดอายุ (M14-7)
+
+    lazy refresh ตอนใช้งานจริง: ปลอดภัยและพอสำหรับ correctness (ไม่ต้องมี background loop).
+    refresh พังก็คืน token เดิม (อาจยังใช้ได้ หรือให้ call จริง error ชัดกว่า).
     """
+    sec = acc.get("secret", {})
+    exp = float(sec.get("expires_at", 0) or 0)
+    rt = sec.get("refresh_token", "")
+    if exp and rt and (exp - time.time() < _OAUTH_REFRESH_SKEW):
+        try:
+            from ..services.account_store import account_store
+            from ..services.oauth_flow import refresh as oauth_refresh
+            new = oauth_refresh(acc["provider"], rt)
+            if new.get("access_token"):
+                account_store.update_oauth_tokens(account_id, new)
+                return new["access_token"]
+        except Exception:  # noqa: BLE001 — refresh พัง → ใช้ token เดิมไปก่อน
+            pass
+    return sec.get("access_token", "")
+
+
+def _resolve_cloud_key(provider: str, account_id: str = "", key_id: str = "") -> str:
+    """หา credential จริงของ cloud call — เรียงลำดับความสำคัญ (M14-4, ต่อยอด M11-14):
+
+    1. `account_id` → ProviderAccount (ใหม่): api_key→secret.key | oauth→secret.access_token
+       (oauth: M14-6/7 จะเพิ่ม refresh + header Bearer; ตอนนี้คืน access_token ปัจจุบัน)
+    2. `key_id` → cloud_keys store (M11-14 เดิม) — backward compat
+    3. default: .env ก่อน แล้วค่อย key แรกใน store
+    agent เก็บแค่ id อ้างอิง ไม่เก็บ secret.
+    """
+    if account_id:
+        from ..services.account_store import account_store
+        acc = account_store.get(account_id)
+        if acc:
+            if acc.get("auth_mode") == "oauth":
+                tok = _oauth_access_token(account_id, acc)  # M14-7 — refresh ถ้าใกล้หมดอายุ
+            else:
+                tok = acc.get("secret", {}).get("key", "")
+            if tok:
+                return tok
     from ..services.cloud_keys import cloud_keys
     if key_id:
         k = cloud_keys.get(key_id)
@@ -193,14 +301,20 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
         # บังคับใช้ active tag เดียวเสมอ (ไม่สน cfg.model) — invariant กันรัน local 2 ตัวซ้อน (M7-8)
         return LLM(model=f"ollama/{active_local_tag()}", base_url=OLLAMA_BASE_URL, **extra)
 
-    key = _resolve_cloud_key(cfg.provider, getattr(cfg, "key_id", "") or "")
+    key = _resolve_cloud_key(cfg.provider, getattr(cfg, "account_id", "") or "",
+                             getattr(cfg, "key_id", "") or "")
     if not key:
         raise MissingAPIKeyError(
             f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings"
         )
 
     model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
-    prefix = {"claude": "anthropic", "gemini": "gemini", "openai": "openai"}[cfg.provider]
+    base = CLOUD_BASE_URL.get(cfg.provider)
+    if base:
+        # OpenAI-compatible endpoint (เช่น xAI/Grok) — CrewAI build นี้ไม่มี native "xai" และไม่ได้ลง
+        # litellm. ใช้ model ชื่อล้วน (ไม่ใส่ prefix) + base_url → CrewAI ยิงแบบ custom endpoint ได้
+        return LLM(model=model, api_key=key, base_url=base, **extra)
+    prefix = LLM_PREFIX[cfg.provider]
     return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
 
 

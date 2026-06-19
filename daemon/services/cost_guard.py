@@ -18,6 +18,8 @@ PRICE_PER_MTOK: dict[str, float] = {
     "claude": 6.0,
     "openai": 5.0,
     "gemini": 0.3,
+    "grok": 8.0,      # M14 — เหมา in+out คร่าว (ตัว flagship); per-model จาก catalog แม่นกว่า
+    "deepseek": 1.0,  # M14 — DeepSeek ถูกมาก
     "ollama": 0.0,   # local ฟรี
 }
 _WINDOW_KEEP = 86400  # เก็บ event ย้อนหลัง 24 ชม. พอสำหรับ cap รายวัน

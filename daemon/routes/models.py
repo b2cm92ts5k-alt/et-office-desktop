@@ -82,21 +82,35 @@ def available() -> dict:
         "provider": "ollama",
         "model": active,
         "label": f"{active} (local • ใช้ร่วมทั้งทีม)",
+        "account_id": "",
         "recommended": True,
     }]
-    # cloud: 1 key เลือกได้หลาย model จาก catalog (M11-13) + tag free / use-cost ใน label
-    for prov, env in ENV_KEY_MAP.items():
-        if not os.environ.get(env):   # มี API key เท่านั้นถึงโผล่ให้เลือก
-            continue
+
+    def _model_opts(prov: str, *, account_id: str, suffix: str) -> list[dict]:
+        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — ผูก account_id (M14-9)"""
         cat = cloud_models(prov)
-        if cat:
-            for m in cat:
-                tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
-                opts.append({"provider": prov, "model": m["model"],
-                             "label": f"☁ {m['label']} · {tag}", "recommended": False})
-        else:  # provider ไม่มีใน catalog → fallback default เดิม
+        if not cat:  # provider ไม่มีใน catalog → fallback default เดิม
             dm = DEFAULT_CLOUD_MODELS[prov]
-            opts.append({"provider": prov, "model": dm, "label": f"☁ {prov} ({dm})", "recommended": False})
+            return [{"provider": prov, "model": dm, "account_id": account_id,
+                     "label": f"☁ {prov} ({dm}){suffix}", "recommended": False}]
+        out = []
+        for m in cat:
+            tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
+            out.append({"provider": prov, "model": m["model"], "account_id": account_id,
+                        "label": f"☁ {m['label']} · {tag}{suffix}", "recommended": False})
+        return out
+
+    # M14-9 — จัดกลุ่มตามบัญชี (ProviderAccount): 1 บัญชีเลือกได้หลาย model (เช่น Claude → Opus/Sonnet/Haiku)
+    from ..services.account_store import account_store
+    for acc in account_store.all_public():
+        opts.extend(_model_opts(acc["provider"], account_id=acc["id"],
+                                suffix=f" · {acc['label']}"))
+
+    # backward compat — provider ที่มี key ใน .env (account_id="" = ใช้ default .env)
+    for prov, env in ENV_KEY_MAP.items():
+        if not os.environ.get(env):
+            continue
+        opts.extend(_model_opts(prov, account_id="", suffix=" · default (.env)"))
     return {"options": opts, "recommended_base": active}
 
 

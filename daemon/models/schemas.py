@@ -18,10 +18,20 @@ def _new_id() -> str:
     return uuid4().hex[:12]
 
 
+CloudProvider = Literal["claude", "gemini", "openai", "grok", "deepseek"]
+
+
 class LLMConfig(BaseModel):
-    """ค่า model ของ agent — local (ollama) หรือ cloud (claude/gemini/openai)"""
-    provider: Literal["ollama", "claude", "gemini", "openai"] = "ollama"
+    """ค่า model ของ agent — local (ollama) หรือ cloud (claude/gemini/openai/grok/deepseek)
+
+    cloud เลือก credential ได้ 2 ทาง (M14-4): `account_id` (ProviderAccount ใหม่ — api_key|oauth)
+    มาก่อน ถ้าว่างจึง fallback `key_id` (M11-14 เดิม) แล้วค่อย default .env — backward compat.
+    เก็บแค่ id อ้างอิง ไม่เคยเก็บ secret.
+    """
+    provider: Literal["ollama", "claude", "gemini", "openai", "grok", "deepseek"] = "ollama"
     model: str = "qwen3:8b"
+    account_id: str = ""   # M14-4 — ProviderAccount (ใหม่)
+    key_id: str = ""       # M11-14 — multi-key เดิม (คงไว้ compat)
 
 
 class AgentConfig(BaseModel):
@@ -134,7 +144,7 @@ class OEPEvent(BaseModel):
 
 
 class ApiKeyRequest(BaseModel):
-    provider: Literal["claude", "gemini", "openai"]
+    provider: Literal["claude", "gemini", "openai", "grok", "deepseek"]
     key: str
 
 
