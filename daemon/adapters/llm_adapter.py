@@ -225,36 +225,10 @@ def available_cloud_providers() -> dict:
             for prov, env in ENV_KEY_MAP.items()}
 
 
-_OAUTH_REFRESH_SKEW = 120  # refresh ล่วงหน้าก่อนหมดอายุ 2 นาที (กันชนกลางสาย)
-
-
-def _oauth_access_token(account_id: str, acc: dict) -> str:
-    """คืน access_token ของ oauth account — refresh อัตโนมัติถ้าใกล้/เลยหมดอายุ (M14-7)
-
-    lazy refresh ตอนใช้งานจริง: ปลอดภัยและพอสำหรับ correctness (ไม่ต้องมี background loop).
-    refresh พังก็คืน token เดิม (อาจยังใช้ได้ หรือให้ call จริง error ชัดกว่า).
-    """
-    sec = acc.get("secret", {})
-    exp = float(sec.get("expires_at", 0) or 0)
-    rt = sec.get("refresh_token", "")
-    if exp and rt and (exp - time.time() < _OAUTH_REFRESH_SKEW):
-        try:
-            from ..services.account_store import account_store
-            from ..services.oauth_flow import refresh as oauth_refresh
-            new = oauth_refresh(acc["provider"], rt)
-            if new.get("access_token"):
-                account_store.update_oauth_tokens(account_id, new)
-                return new["access_token"]
-        except Exception:  # noqa: BLE001 — refresh พัง → ใช้ token เดิมไปก่อน
-            pass
-    return sec.get("access_token", "")
-
-
 def _resolve_cloud_key(provider: str, account_id: str = "", key_id: str = "") -> str:
     """หา credential จริงของ cloud call — เรียงลำดับความสำคัญ (M14-4, ต่อยอด M11-14):
 
-    1. `account_id` → ProviderAccount (ใหม่): api_key→secret.key | oauth→secret.access_token
-       (oauth: M14-6/7 จะเพิ่ม refresh + header Bearer; ตอนนี้คืน access_token ปัจจุบัน)
+    1. `account_id` → ProviderAccount (api_key, เข้ารหัส DPAPI)
     2. `key_id` → cloud_keys store (M11-14 เดิม) — backward compat
     3. default: .env ก่อน แล้วค่อย key แรกใน store
     agent เก็บแค่ id อ้างอิง ไม่เก็บ secret.
@@ -263,10 +237,7 @@ def _resolve_cloud_key(provider: str, account_id: str = "", key_id: str = "") ->
         from ..services.account_store import account_store
         acc = account_store.get(account_id)
         if acc:
-            if acc.get("auth_mode") == "oauth":
-                tok = _oauth_access_token(account_id, acc)  # M14-7 — refresh ถ้าใกล้หมดอายุ
-            else:
-                tok = acc.get("secret", {}).get("key", "")
+            tok = acc.get("secret", {}).get("key", "")
             if tok:
                 return tok
     from ..services.cloud_keys import cloud_keys

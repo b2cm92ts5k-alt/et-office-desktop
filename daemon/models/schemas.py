@@ -24,7 +24,7 @@ CloudProvider = Literal["claude", "gemini", "openai", "grok", "deepseek"]
 class LLMConfig(BaseModel):
     """ค่า model ของ agent — local (ollama) หรือ cloud (claude/gemini/openai/grok/deepseek)
 
-    cloud เลือก credential ได้ 2 ทาง (M14-4): `account_id` (ProviderAccount ใหม่ — api_key|oauth)
+    cloud เลือก credential ได้ 2 ทาง (M14-4): `account_id` (ProviderAccount api_key เข้ารหัส DPAPI)
     มาก่อน ถ้าว่างจึง fallback `key_id` (M11-14 เดิม) แล้วค่อย default .env — backward compat.
     เก็บแค่ id อ้างอิง ไม่เคยเก็บ secret.
     """

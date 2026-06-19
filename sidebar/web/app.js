@@ -415,7 +415,6 @@ async function loadSettings() {
     document.getElementById("vram-info").textContent =
       `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
     await loadKeys();   // M11-14 — โหลด key list (default .env + store)
-    await loadAccounts();  // M14-10 — โหลดบัญชี provider (api_key + oauth)
     renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
@@ -791,52 +790,6 @@ async function saveKey() {
   } else {
     feedLine("error", `เพิ่ม key ไม่สำเร็จ (${res.status})`);
   }
-}
-
-/* ---------- Provider Accounts (M14-10) — Claude OAuth login (api key อยู่ section API KEYS) ---------- */
-
-async function loadAccounts() {
-  let data = { accounts: [], providers: [] };
-  try { data = await (await fetch(BASE + "/accounts")).json(); } catch {}
-  // LOGIN section = ปุ่ม Login with Claude (OAuth subscription) เท่านั้น — API key อยู่ section ถัดไป
-  const claude = (data.providers || []).find(p => p.provider === "claude" && p.oauth);
-  const loginBox = document.getElementById("acc-oauth");
-  if (loginBox) {
-    loginBox.innerHTML = claude
-      ? `<button class="neon-btn" onclick="connectOAuth('claude')">เข้าสู่ระบบด้วย Claude (subscription)</button>`
-      : "";
-  }
-  // list = เฉพาะบัญชีที่ login ผ่าน OAuth (api key โชว์ในส่วน API KEYS)
-  const oauth = (data.accounts || []).filter(a => a.auth_mode === "oauth");
-  const box = document.getElementById("accounts-list");
-  if (box) box.innerHTML = oauth.length
-    ? oauth.map(a =>
-        `<div class="key-item"><span class="key-chip on">${esc(a.provider)}</span> `
-        + `🔑 ${esc(a.label)} `
-        + `<button class="ghost sm" onclick="deleteAccount('${esc(a.id)}')">✕ ออกจากระบบ</button></div>`).join("")
-    : `<div class="dim">ยังไม่ได้ login — กดปุ่มด้านบน (ใช้ค่าสมาชิก Claude)</div>`;
-}
-
-async function connectOAuth(provider) {
-  try {
-    const res = await fetch(BASE + "/accounts/oauth/start", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider }),
-    });
-    const d = await res.json();
-    if (!res.ok) { feedLine("error", `เริ่ม login ไม่ได้: ${d.detail || res.status}`); return; }
-    if (!d.browser_opened && d.authorize_url) window.open(d.authorize_url, "_blank");
-    feedLine("ln", `เปิดหน้า login ${provider} แล้ว — ยินยอมในเบราว์เซอร์ เสร็จแล้วกลับมา`);
-    setTimeout(loadAccounts, 4000);   // เด้งรีเฟรชหลัง callback (เผื่อ login เร็ว)
-  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
-}
-
-async function deleteAccount(id) {
-  try {
-    const res = await fetch(BASE + "/accounts/" + encodeURIComponent(id), { method: "DELETE" });
-    if (res.ok) { feedLine("ln", "ถอดบัญชีแล้ว"); loadAccounts(); }
-    else feedLine("error", `ถอดบัญชีไม่สำเร็จ (${res.status})`);
-  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
 }
 
 /* ---------- github (M9-3) ---------- */

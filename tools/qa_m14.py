@@ -1,22 +1,18 @@
-"""QA Gate M14 — Provider Accounts & OAuth (M14-1..M14-11)
+"""QA Gate M14 — Provider Accounts (API key) (M14-1..M14-11)
 
 รันแบบ import ตรง (ไม่ต้องมี daemon): python tools/qa_m14.py
 ครอบคลุม: ProviderAccountStore + DPAPI, provider matrix (+grok/+deepseek), catalog+pricing,
-account_id resolution, api-key validate, Claude OAuth (PKCE/exchange/refresh), /accounts routes,
-group-by-account, UI wiring + secret ไม่หลุด.
+account_id resolution, api-key validate, /accounts routes, group-by-account, UI wiring + secret ไม่หลุด.
 
-network จริงไม่ถูกเรียก — oauth ใช้ mock token server, validate เทสแค่โครง (bad key → ok:False).
+(OAuth ถอดออก — Anthropic/Google ห้าม third-party ใช้ OAuth subscription, ผิด ToS.)
+network จริงไม่ถูกเรียก — validate เทสแค่โครง (bad key → ok:False).
 account_store ชี้ temp dir เสมอ (ไม่แตะ cloud_accounts จริง).
 """
 from __future__ import annotations
 
-import http.server
 import json
 import sys
 import tempfile
-import threading
-import time
-import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,33 +25,10 @@ def check(name: str, ok: bool, info: str = "") -> None:
     print(("PASS" if ok else "FAIL"), "-", name, (f"  [{info}]" if info else ""))
 
 
-def _mock_token_server() -> tuple[str, object]:
-    """server เล็ก ๆ ตอบ token ทั้ง authorization_code และ refresh_token"""
-    class H(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
-            n = int(self.headers.get("Content-Length", 0))
-            d = dict(urllib.parse.parse_qsl(self.rfile.read(n).decode()))
-            if d.get("grant_type") == "refresh_token":
-                body = {"access_token": "AT-REFRESHED", "refresh_token": "RT-NEW", "expires_in": 3600}
-            else:
-                body = {"access_token": "AT-INIT", "refresh_token": "RT-INIT", "expires_in": 3600, "scope": "user:inference"}
-            out = json.dumps(body).encode()
-            self.send_response(200); self.send_header("Content-Type", "application/json")
-            self.end_headers(); self.wfile.write(out)
-
-        def log_message(self, *a):
-            pass
-
-    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return f"http://127.0.0.1:{srv.server_address[1]}/tok", srv
-
-
 def main() -> None:
     from daemon.adapters import llm_adapter as LA
     from daemon.models.schemas import LLMConfig
     from daemon.services import account_store as AS
-    from daemon.services import oauth_flow as OF
 
     # account_store → temp (ไม่แตะของจริง) + legacy file สำหรับเทส migrate
     tmp = Path(tempfile.mkdtemp())
@@ -117,33 +90,11 @@ def main() -> None:
     check("resolve api_key account → key", LA._resolve_cloud_key("grok", account_id="a_api") == "K-API")
     check("account_id ว่าง + ไม่มี env → ''", LA._resolve_cloud_key("grok") == "")
 
-    # ---------- M14-6/7 Claude OAuth (PKCE) + refresh ----------
-    print("--- M14-6/7 Claude OAuth (PKCE) + refresh ---")
-    token_url, srv = _mock_token_server()
-    OF.PROVIDER_OAUTH["claude"] = {"authorize_url": "https://claude.ai/oauth/authorize",
-                                   "token_url": token_url, "client_id": "TESTCID", "scope": "user:inference"}
-    OF._pending.clear()
-    v, c = OF.pkce_pair()
-    check("PKCE pair (verifier+challenge ต่างกัน)", v and c and v != c)
-    st = OF.start("claude", "http://localhost:8797/accounts/oauth/callback")
-    check("authorize_url มี PKCE S256 + client_id", "code_challenge=" in st["authorize_url"]
-          and "code_challenge_method=S256" in st["authorize_url"] and "client_id=TESTCID" in st["authorize_url"])
-    prov, tok = OF.exchange(st["state"], "AUTHCODE")
-    check("exchange → access+refresh token", prov == "claude" and tok["access_token"] == "AT-INIT" and tok["refresh_token"] == "RT-INIT")
-    try:
-        OF.exchange("BOGUS", "x"); bad_ok = False
-    except ValueError:
-        bad_ok = True
-    check("bad state ถูกปฏิเสธ (กัน CSRF)", bad_ok)
-    # lazy refresh: token หมดอายุ → resolver refresh เอง
-    AS.account_store._accounts = [{"id": "oc", "provider": "claude", "label": "max", "auth_mode": "oauth",
-                                   "secret": {"access_token": "AT-OLD", "refresh_token": "RT-INIT",
-                                              "expires_at": time.time() - 5, "scope": ""}}]
-    refreshed = LA._resolve_cloud_key("claude", account_id="oc")
-    check("lazy refresh token หมดอายุ → ใหม่", refreshed == "AT-REFRESHED")
-    check("store rotate refresh token", AS.account_store.get("oc")["secret"]["refresh_token"] == "RT-NEW")
-    srv.shutdown()
-    OF.PROVIDER_OAUTH["claude"]["client_id"] = ""  # เคลียร์ค่าเทส — กัน route เปิด browser จริง + ให้เทส 400 ด้านล่าง valid
+    # ---------- M14: OAuth ถอดออก (ยืนยันไม่มี oauth_flow + route แล้ว) ----------
+    print("--- M14: OAuth removed (compliance) ---")
+    check("ลบ oauth_flow.py แล้ว", not (Path(LA.__file__).resolve().parent.parent / "services" / "oauth_flow.py").exists())
+    import importlib.util
+    check("import oauth_flow ไม่ได้แล้ว", importlib.util.find_spec("daemon.services.oauth_flow") is None)
 
     # ---------- M14-5/8/9 routes (TestClient) ----------
     print("--- M14-5/8/9 /accounts + /models/available ---")
@@ -151,17 +102,13 @@ def main() -> None:
     from daemon.main import app
     cl = TestClient(app)
     AS.account_store._accounts = [
-        {"id": "cl1", "provider": "claude", "label": "Claude Max", "auth_mode": "oauth",
-         "secret": {"access_token": "x", "refresh_token": "r", "expires_at": 9e9, "scope": ""}},
+        {"id": "cl1", "provider": "claude", "label": "Claude key", "auth_mode": "api_key", "secret": {"key": "kc"}},
         {"id": "gr1", "provider": "grok", "label": "xai", "auth_mode": "api_key", "secret": {"key": "k"}},
     ]
     r = cl.get("/accounts")
     check("GET /accounts 200 + providers", r.status_code == 200 and len(r.json()["providers"]) == 5)
-    check("list masked ไม่มี token/key", all("access_token" not in a and "key" not in a for a in r.json()["accounts"]))
-    r2 = cl.post("/accounts/oauth/start", json={"provider": "claude"})
-    check("oauth/start ไม่มี client_id → 400", r2.status_code == 400)
-    r3 = cl.post("/accounts/oauth/start", json={"provider": "grok"})
-    check("oauth/start provider ไม่รองรับ → 400", r3.status_code == 400)
+    check("list masked ไม่มี key ดิบ", all("key" not in a for a in r.json()["accounts"]))
+    check("oauth route ถูกถอด (start → 404/405)", cl.post("/accounts/oauth/start", json={"provider": "claude"}).status_code in (404, 405))
     opts = cl.get("/models/available").json()["options"]
     claude_opts = [o for o in opts if o.get("account_id") == "cl1"]
     check("group-by-account: 1 บัญชี Claude → หลาย model", len(claude_opts) >= 3,
@@ -174,16 +121,14 @@ def main() -> None:
     bad = LA.validate_cloud_key("openai", "sk-bogus-key-xxx", timeout=6)
     check("validate key ปลอม → ok:False (ไม่ throw)", bad.get("ok") is False)
 
-    # ---------- M14-10/11 UI wiring ----------
-    print("--- M14-10/11 UI wiring ---")
+    # ---------- M14 UI wiring ----------
+    print("--- M14 UI wiring ---")
     web = Path(__file__).resolve().parent.parent / "sidebar" / "web"
     appjs = (web / "app.js").read_text(encoding="utf-8")
     html = (web / "index.html").read_text(encoding="utf-8")
-    check("app.js มีฟังก์ชัน account ครบ", all(f in appjs for f in ("loadAccounts", "connectOAuth", "deleteAccount")))
     check("model dropdown พา account_id (3-part)", 'o.account_id || ""' in appjs and "p[2]" in appjs)
-    check("LOGIN section = Login button + list (ไม่มี key form)", 'id="acc-oauth"' in html and 'id="accounts-list"' in html and 'id="acc-key"' not in html)
-    check("ปุ่ม Login with Claude (OAuth)", "connectOAuth('claude')" in appjs)  # M14-11 banner ถอดตามคำขอ CEO; LOGIN=ปุ่มอย่างเดียว, API key อยู่ section แยก
-    check("provider select (API KEYS) มี grok+deepseek", 'value="grok"' in html and 'value="deepseek"' in html)
+    check("LOGIN/OAuth UI ถูกถอด", "connectOAuth" not in appjs and 'id="acc-oauth"' not in html and "LOGIN — Claude subscription" not in html)
+    check("API KEYS section + provider grok/deepseek", "API KEYS" in html and 'value="grok"' in html and 'value="deepseek"' in html)
 
     # ---------- สรุป ----------
     passed = sum(1 for ok, _, _ in _results if ok)

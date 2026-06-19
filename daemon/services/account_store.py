@@ -1,18 +1,18 @@
-"""ProviderAccountStore (M14-1) — บัญชี provider ต่อ agent (api_key | oauth) เข้ารหัส DPAPI
+"""ProviderAccountStore (M14-1) — บัญชี API key ต่อ provider เข้ารหัส DPAPI
 
-ยกระดับจาก [[cloud_keys]] (CloudKeyStore): เดิมเก็บได้แค่ API key หลายอัน/provider.
-ตัวนี้เก็บเป็น "บัญชี" (account) ที่มี 2 โหมด:
+ยกระดับจาก [[cloud_keys]] (CloudKeyStore): เก็บเป็น "บัญชี" (account) แบบ api_key
   - auth_mode="api_key" : secret = {"key": "..."} (วาง key เอง — claude/gemini/openai/grok/deepseek)
-  - auth_mode="oauth"   : secret = {"access_token","refresh_token","expires_at","scope"} (Claude Pro/Max)
+
+(OAuth/subscription login ถอดออก — Anthropic/Google ห้าม third-party ใช้ OAuth ของ subscription
+ผิด ToS เสี่ยงแบน. ทางที่ถูก = API key. ดู [[et-office-m14-provider-accounts]].)
 
 privacy (คงกฎเดิม): secret อยู่แค่ไฟล์ local นี้ + **เข้ารหัส DPAPI at rest** (ผูก Windows user)
-— agent เก็บแค่ `account_id` อ้างอิง ไม่เก็บ secret; ที่ส่งออก API ปิดบัง (masked) ไม่เคยคาย token ดิบ.
+— agent เก็บแค่ `account_id` อ้างอิง ไม่เก็บ secret; ที่ส่งออก API ปิดบัง (masked) ไม่เคยคาย key ดิบ.
 
 ไฟล์: data/cloud_accounts.enc (DPAPI blob, gitignored). ถ้า DPAPI ใช้ไม่ได้ (ไม่ใช่ Windows /
 ไม่มี pywin32) → fallback เก็บ plaintext data/cloud_accounts.json + เตือน (dev เท่านั้น).
 
-migration: รอบแรกถ้ายังไม่มีไฟล์ account แต่มี cloud_keys.json เดิม → import เป็น api_key accounts
-(backward compat — agent ที่อ้าง key_id เดิมยังหาเจอผ่าน [[cloud_keys]] ที่คงไว้คู่กัน).
+migration: รอบแรกถ้ายังไม่มีไฟล์ account แต่มี cloud_keys.json เดิม → import เป็น api_key accounts.
 """
 from __future__ import annotations
 
@@ -26,8 +26,6 @@ _DATA_DIR = Path(__file__).parent.parent / "data"
 ENC_PATH = _DATA_DIR / "cloud_accounts.enc"      # DPAPI-encrypted (ปกติ)
 PLAIN_PATH = _DATA_DIR / "cloud_accounts.json"   # fallback ถ้า DPAPI ใช้ไม่ได้
 LEGACY_KEYS_PATH = _DATA_DIR / "cloud_keys.json"  # ของเดิม (M11-14) — ใช้ migrate
-
-AUTH_MODES = ("api_key", "oauth")
 
 
 def mask(secret: str) -> str:
@@ -128,12 +126,8 @@ class ProviderAccountStore:
 
     def _public(self, a: dict) -> dict:
         sec = a.get("secret", {})
-        if a["auth_mode"] == "oauth":
-            hint = {"expires_at": sec.get("expires_at", 0), "scope": sec.get("scope", "")}
-        else:
-            hint = {"masked": mask(sec.get("key", ""))}
         return {"id": a["id"], "provider": a["provider"], "label": a.get("label", ""),
-                "auth_mode": a["auth_mode"], **hint}
+                "auth_mode": a.get("auth_mode", "api_key"), "masked": mask(sec.get("key", ""))}
 
     def get(self, account_id: str) -> dict | None:
         """คืน account เต็ม (มี secret) — ใช้ตอน resolve ค่า cloud call (get_llm)"""
@@ -151,33 +145,6 @@ class ProviderAccountStore:
             self._accounts.append(entry)
             self._save()
         return self._public(entry)
-
-    def add_oauth(self, provider: str, label: str, tokens: dict) -> dict:
-        entry = {"id": uuid4().hex[:8], "provider": provider,
-                 "label": (label or "").strip() or f"{provider} login", "auth_mode": "oauth",
-                 "secret": {"access_token": tokens.get("access_token", ""),
-                            "refresh_token": tokens.get("refresh_token", ""),
-                            "expires_at": float(tokens.get("expires_at", 0) or 0),
-                            "scope": tokens.get("scope", "")},
-                 "created_at": time.time()}
-        with self._lock:
-            self._accounts.append(entry)
-            self._save()
-        return self._public(entry)
-
-    def update_oauth_tokens(self, account_id: str, tokens: dict) -> bool:
-        """อัปเดต token หลัง refresh (M14-7) — เก็บ refresh token ตัวใหม่ถ้ามี"""
-        with self._lock:
-            for a in self._accounts:
-                if a["id"] == account_id and a["auth_mode"] == "oauth":
-                    sec = a["secret"]
-                    sec["access_token"] = tokens.get("access_token", sec.get("access_token", ""))
-                    if tokens.get("refresh_token"):
-                        sec["refresh_token"] = tokens["refresh_token"]
-                    sec["expires_at"] = float(tokens.get("expires_at", sec.get("expires_at", 0)) or 0)
-                    self._save()
-                    return True
-        return False
 
     def delete(self, account_id: str) -> bool:
         with self._lock:
