@@ -909,19 +909,17 @@ async function loadAvailableModels(force) {
 function fillModelSelect(sel, opts, current) {
   sel.innerHTML = "";
   let matched = false;
-  const curAcc = (current && current.account_id) || "";
   for (const o of opts) {
     const op = document.createElement("option");
-    op.value = o.provider + "|" + o.model + "|" + (o.account_id || "");  // M14-9 — พา account_id
+    op.value = o.provider + "|" + o.model;   // 1 บรรทัด/model — key/บัญชีเลือกแยกที่ m-key
     op.textContent = o.label;
-    if (current && current.provider === o.provider && current.model === o.model
-        && curAcc === (o.account_id || "")) { op.selected = true; matched = true; }
+    if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
     sel.appendChild(op);
   }
   if (current && current.model && !matched) {
-    // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่บัญชี/key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
+    // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่ key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
     const op = document.createElement("option");
-    op.value = current.provider + "|" + current.model + "|" + curAcc;
+    op.value = current.provider + "|" + current.model;
     op.textContent = (current.provider !== "ollama" ? "☁ " : "") + current.provider + "/" + current.model + " (ปัจจุบัน)";
     op.selected = true;
     sel.appendChild(op);
@@ -929,7 +927,7 @@ function fillModelSelect(sel, opts, current) {
 }
 
 function parseModelVal(v) {
-  const p = String(v).split("|");   // provider|model|account_id (account_id optional, M14-9)
+  const p = String(v).split("|");   // provider|model (account_id เลือกแยกที่ m-key)
   return { provider: p[0] || "", model: p[1] || "", account_id: p[2] || "" };
 }
 
@@ -993,7 +991,24 @@ async function openModelPicker(agentId) {
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3
+  document.getElementById("m-model").onchange = () => refreshKeyDropdown();
+  await refreshKeyDropdown(a);
   document.getElementById("model-backdrop").classList.remove("hidden");
+}
+
+// เลือก key/บัญชีที่จะใช้กับ model (cloud) — อ่านจาก account_store (DPAPI) + .env, กรองตาม provider
+async function refreshKeyDropdown(agent) {
+  const row = document.getElementById("m-key-row");
+  const ksel = document.getElementById("m-key");
+  if (!row || !ksel) return;
+  const { provider } = parseModelVal(document.getElementById("m-model").value || "");
+  if (provider === "ollama" || !provider) { row.classList.add("hidden"); return; }
+  let keys = [];
+  try { keys = (await (await fetch(BASE + "/accounts?provider=" + encodeURIComponent(provider))).json()).accounts || []; } catch {}
+  const cur = agent && agent.llm && agent.llm.account_id ? agent.llm.account_id : "";
+  ksel.innerHTML = `<option value="">(default — key แรกของ ${esc(provider)})</option>`
+    + keys.map(k => `<option value="${esc(k.id)}"${k.id === cur ? " selected" : ""}>${esc(k.label)} ${esc(k.masked || "")}</option>`).join("");
+  row.classList.remove("hidden");
 }
 
 // M11-3 — สร้าง checklist ของ tool ในโมดัล (ติ๊กตาม allowed_tools; ว่าง = ไม่ติ๊กเลย = ทุก tool)
@@ -1051,7 +1066,9 @@ async function saveModel() {
   const thinking_mode = document.getElementById("m-thinking").checked;            // M11-8
   const allowed_tools = [...document.querySelectorAll("#m-tools input:checked")]   // M11-3
     .map(c => c.value);
-  // account_id ผูกมากับ model dropdown แล้ว (M14-9) — ไม่ต้องมี key dropdown แยก
+  // เลือก model ก่อน → เลือก key/บัญชีจาก dropdown แยก → ผูกเป็น llm.account_id
+  const keyRow = document.getElementById("m-key-row");
+  llm.account_id = keyRow.classList.contains("hidden") ? "" : document.getElementById("m-key").value;
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

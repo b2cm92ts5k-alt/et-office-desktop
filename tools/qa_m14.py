@@ -110,10 +110,13 @@ def main() -> None:
     check("list masked ไม่มี key ดิบ", all("key" not in a for a in r.json()["accounts"]))
     check("oauth route ถูกถอด (start → 404/405)", cl.post("/accounts/oauth/start", json={"provider": "claude"}).status_code in (404, 405))
     opts = cl.get("/models/available").json()["options"]
-    claude_opts = [o for o in opts if o.get("account_id") == "cl1"]
-    check("group-by-account: 1 บัญชี Claude → หลาย model", len(claude_opts) >= 3,
+    claude_opts = [o for o in opts if o["provider"] == "claude"]
+    check("provider มี credential → catalog 1 ชุด (ไม่ซ้ำตามจำนวน key)", len(claude_opts) >= 3,
           ",".join(o["model"] for o in claude_opts))
-    check("ทุก option มี account_id field", all("account_id" in o for o in opts))
+    # มี account claude 1 + grok 1 → ไม่ควรมี model ซ้ำ (เช่น claude opus โผล่ครั้งเดียว)
+    dup = [o["provider"] + "/" + o["model"] for o in opts]
+    check("ไม่มี model ซ้ำใน dropdown", len(dup) == len(set(dup)))
+    check("key dropdown filter ตาม provider", cl.get("/accounts?provider=grok").status_code == 200)
 
     # ---------- M14-5 validate (โครง) ----------
     print("--- M14-5 validate_cloud_key ---")
@@ -126,12 +129,14 @@ def main() -> None:
     web = Path(__file__).resolve().parent.parent / "sidebar" / "web"
     appjs = (web / "app.js").read_text(encoding="utf-8")
     html = (web / "index.html").read_text(encoding="utf-8")
-    check("model dropdown พา account_id (3-part)", 'o.account_id || ""' in appjs and "p[2]" in appjs)
+    check("model dropdown = provider|model (1 บรรทัด/model)", 'o.provider + "|" + o.model;' in appjs)
     check("LOGIN/OAuth UI ถูกถอด", "connectOAuth" not in appjs and 'id="acc-oauth"' not in html and "LOGIN — Claude subscription" not in html)
     check("API KEYS section + provider grok/deepseek", "API KEYS" in html and 'value="grok"' in html and 'value="deepseek"' in html)
-    # M14 consolidation — key store เดียว (account_store DPAPI), เลิก /settings/keys + m-key dropdown ใน UI
+    # M14 consolidation — key store เดียว (account_store DPAPI), เลิก /settings/keys ใน UI
     check("UI key form ใช้ /accounts/api-key (ไม่ใช่ /settings/keys)", "/accounts/api-key" in appjs and "/settings/keys" not in appjs)
-    check("m-key dropdown ถูกถอด (account ผูกกับ model)", "refreshKeyDropdown" not in appjs and 'id="m-key"' not in html)
+    # UX 2-step: เลือก model → เลือก key/บัญชีจาก dropdown แยก (อ่าน /accounts)
+    check("m-key dropdown มี + อ่าน /accounts", "refreshKeyDropdown" in appjs and "/accounts?provider=" in appjs and 'id="m-key"' in html)
+    check("saveModel ผูก account_id จาก key dropdown", "llm.account_id = keyRow" in appjs)
 
     # ---------- สรุป ----------
     passed = sum(1 for ok, _, _ in _results if ok)

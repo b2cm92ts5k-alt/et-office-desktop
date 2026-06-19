@@ -86,31 +86,31 @@ def available() -> dict:
         "recommended": True,
     }]
 
-    def _model_opts(prov: str, *, account_id: str, suffix: str) -> list[dict]:
-        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — ผูก account_id (M14-9)"""
+    def _model_opts(prov: str) -> list[dict]:
+        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — 1 บรรทัด/model
+
+        account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
+        """
         cat = cloud_models(prov)
         if not cat:  # provider ไม่มีใน catalog → fallback default เดิม
             dm = DEFAULT_CLOUD_MODELS[prov]
-            return [{"provider": prov, "model": dm, "account_id": account_id,
-                     "label": f"☁ {prov} ({dm}){suffix}", "recommended": False}]
+            return [{"provider": prov, "model": dm, "account_id": "",
+                     "label": f"☁ {prov} ({dm})", "recommended": False}]
         out = []
         for m in cat:
             tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
-            out.append({"provider": prov, "model": m["model"], "account_id": account_id,
-                        "label": f"☁ {m['label']} · {tag}{suffix}", "recommended": False})
+            out.append({"provider": prov, "model": m["model"], "account_id": "",
+                        "label": f"☁ {m['label']} · {tag}", "recommended": False})
         return out
 
-    # M14-9 — จัดกลุ่มตามบัญชี (ProviderAccount): 1 บัญชีเลือกได้หลาย model (เช่น Claude → Opus/Sonnet/Haiku)
+    # provider ที่มี credential (account_store หรือ .env) → แสดง catalog ครั้งเดียว/provider
+    # (key/บัญชีไหน เลือกที่ key dropdown แยก — กัน model ซ้ำตามจำนวน key)
     from ..services.account_store import account_store
-    for acc in account_store.all_public():
-        opts.extend(_model_opts(acc["provider"], account_id=acc["id"],
-                                suffix=f" · {acc['label']}"))
-
-    # backward compat — provider ที่มี key ใน .env (account_id="" = ใช้ default .env)
-    for prov, env in ENV_KEY_MAP.items():
-        if not os.environ.get(env):
-            continue
-        opts.extend(_model_opts(prov, account_id="", suffix=" · default (.env)"))
+    has_cred = {a["provider"] for a in account_store.all_public()}
+    has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
+    for prov in ENV_KEY_MAP:  # คงลำดับ provider
+        if prov in has_cred:
+            opts.extend(_model_opts(prov))
     return {"options": opts, "recommended_base": active}
 
 
