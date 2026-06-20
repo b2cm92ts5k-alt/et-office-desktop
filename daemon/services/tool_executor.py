@@ -59,6 +59,7 @@ ROLE_TOOL_PRESETS: dict[str, list[str]] = {
     "coder":      ["read_file", "write_file", "list_dir", "mkdir", "move",
                    "git_status", "git_diff", "git_commit", "git_push"],
     "designer":   ["read_file", "write_file", "list_dir", "mkdir"],
+    "artist":     ["generate_image", "read_file", "write_file", "list_dir", "mkdir"],  # M17 — ET Artist
     "researcher": ["read_file", "write_file", "list_dir", "web_search", "fetch_url"],
     "producer":   ["read_file", "list_dir",
                    "gh_list_issues", "gh_create_issue", "gh_comment_issue", "gh_close_issue"],
