@@ -107,17 +107,21 @@ _FREE_TIER_PROVIDERS = {"gemini", "github"}
 
 
 def _price_tag(prov: str, c: dict | None, mi: dict | None) -> str:
-    """ป้ายฟรี/เสียเงินตามข้อมูลจริง — ราคาจริงมาก่อน (catalog→cache) ไม่มีก็ตาม policy ของ provider"""
+    """ป้ายฟรี/เสียเงินตามข้อมูลจริง — ราคาจริงมาก่อน (catalog→cache) ไม่มีก็ตาม policy ของ provider
+
+    ฟรีแบบ free-tier = "🟢 ฟรี*" (ดอกจัน = มีโควต้า/วัน ที่ต่างกันตามรุ่น, ไม่การันตีไม่จำกัด)
+    เสียเงิน = โชว์ราคาจริง $เข้า→$ออก /1M token ถ้ามี; ไม่มีตัวเลข = "จ่ายตามใช้ (ดูที่ผู้ให้บริการ)"
+    """
     if c:  # catalog (curated, hand-verified)
-        return "🟢 ฟรี · มี limit/วัน" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
+        return "🟢 ฟรี* · โควต้าตามรุ่น" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
     pin, pout = (mi or {}).get("price_in"), (mi or {}).get("price_out")
     if pin is not None:  # ราคาจริงจาก list-endpoint (เช่น OpenRouter)
         if not pin and not (pout or 0):
-            return "🟢 ฟรี"
+            return "🟢 ฟรี · มี rate limit"
         return f"💰 ${pin}→${pout}/1M"
-    if prov in _FREE_TIER_PROVIDERS:   # ไม่รู้ราคา แต่ provider มี free tier
-        return "🟢 ฟรี · มี limit/วัน"
-    return "💰 มีค่าใช้จ่าย · ตามผู้ให้บริการ"
+    if prov in _FREE_TIER_PROVIDERS:   # ไม่รู้ราคาต่อ model แต่ provider มี free tier
+        return "🟢 ฟรี* · โควต้าตามรุ่น"
+    return "💰 จ่ายตามใช้ · ดูราคาที่ผู้ให้บริการ"
 
 
 def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
