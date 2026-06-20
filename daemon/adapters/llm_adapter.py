@@ -126,6 +126,108 @@ ENV_KEY_MAP = {p: s["env_key"] for p, s in PROVIDERS.items()}
 DEFAULT_CLOUD_MODELS = {p: s["default_model"] for p, s in PROVIDERS.items()}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# M16-2 — Model normalize + classify
+# ทุก provider คืนรูปร่าง model ต่างกัน → normalize เป็น ModelInfo รูปเดียว + จัดประเภท (kind)
+# kind ใช้ใน UI: "chat" = ใช้เป็นสมอง agent ได้ (โชว์ default); อื่น ๆ ซ่อนหลัง "แสดงทั้งหมด"
+#   ModelInfo = {id, label, kind, ctx, price_in, price_out}
+#   kind ∈ chat | embed | image | audio | video | other
+KIND_CHAT, KIND_EMBED, KIND_IMAGE, KIND_AUDIO, KIND_VIDEO, KIND_OTHER = \
+    "chat", "embed", "image", "audio", "video", "other"
+
+
+def _model_info(mid: str, label: str | None, kind: str,
+                ctx=None, price_in=None, price_out=None) -> dict:
+    return {"id": mid, "label": (label or mid), "kind": kind,
+            "ctx": ctx, "price_in": price_in, "price_out": price_out}
+
+
+def _kind_from_id(model_id: str) -> str:
+    """เดา kind จากชื่อ id (ใช้กับ provider ที่ไม่บอก capability ตรง ๆ เช่น openai/grok/deepseek)
+
+    หมายเหตุ: รุ่นที่ "รับภาพแต่ตอบเป็นข้อความ" (เช่น gpt-4o-vision) = chat — ห้าม map เป็น image.
+    image = รุ่นที่ **ออก**ภาพ (dall-e/imagen/gpt-image); video = veo/sora; audio = whisper/tts/lyria.
+    """
+    s = model_id.lower()
+    if any(x in s for x in ("embedding", "embed", "text-embedding")):
+        return KIND_EMBED
+    if any(x in s for x in ("whisper", "-tts", "tts-", "transcribe", "speech", "lyria")):
+        return KIND_AUDIO
+    if any(x in s for x in ("dall-e", "dalle", "gpt-image", "imagen", "image-generation", "stable-diffusion", "flux")):
+        return KIND_IMAGE
+    if any(x in s for x in ("veo", "sora", "-video", "video-")):
+        return KIND_VIDEO
+    if any(x in s for x in ("moderation", "rerank", "guard")):
+        return KIND_OTHER
+    return KIND_CHAT
+
+
+def _parse_openai_like(data: dict) -> list[dict]:
+    """OpenAI/Claude/Grok/DeepSeek: {data:[{id, display_name?, ...}]} — classify จาก id"""
+    out = []
+    for m in data.get("data") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or m.get("name") or ""
+        if not mid:
+            continue
+        label = m.get("display_name") or m.get("name") or mid
+        out.append(_model_info(mid, label, _kind_from_id(mid)))
+    return out
+
+
+def _parse_gemini(data: dict) -> list[dict]:
+    """Gemini: {models:[{name:'models/..', displayName, supportedGenerationMethods, inputTokenLimit}]}
+    classify จาก supportedGenerationMethods (แม่นกว่าเดา id): generateContent=chat, embedContent=embed
+    """
+    out = []
+    for m in data.get("models") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = (m.get("name") or "").split("/")[-1]
+        if not mid:
+            continue
+        methods = m.get("supportedGenerationMethods") or []
+        if any(x in methods for x in ("generateContent", "bidiGenerateContent")):
+            kind = KIND_CHAT
+        elif any(x in methods for x in ("embedContent", "embedText")):
+            kind = KIND_EMBED
+        else:
+            kind = _kind_from_id(mid)   # imagen/veo/lyria/tts ตกมาทางนี้
+        out.append(_model_info(mid, m.get("displayName"), kind, ctx=m.get("inputTokenLimit")))
+    return out
+
+
+# ผูก parser เข้า registry (วางหลังนิยามฟังก์ชัน เพื่อไม่ต้องเรียงนิยามไว้ก่อน PROVIDERS)
+# openrouter/github เพิ่ม parser ของตัวเองใน M16-6
+for _p in ("openai", "claude", "grok", "deepseek"):
+    PROVIDERS[_p]["list"]["parse"] = _parse_openai_like
+PROVIDERS["gemini"]["list"]["parse"] = _parse_gemini
+
+
+def normalize_models(provider: str, data: dict) -> list[dict]:
+    """raw จาก list-endpoint → list[ModelInfo] (M16-2)
+
+    ใช้ parser เฉพาะของ provider (PROVIDERS[..]['list']['parse']); ถ้าไม่มี/พัง→ generic fallback
+    (รองรับทั้ง {data:[..]} และ {models:[..]}, classify ด้วย _kind_from_id).
+    """
+    spec = PROVIDERS.get(provider) or {}
+    fn = (spec.get("list") or {}).get("parse")
+    if fn:
+        try:
+            return fn(data)
+        except Exception:  # noqa: BLE001 — parser พัง (shape เปลี่ยน) → อย่าให้ทั้ง validate ล้ม
+            pass
+    out = []
+    for m in (data.get("data") or data.get("models") or []):
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or (m.get("name") or "").split("/")[-1]
+        if mid:
+            out.append(_model_info(mid, m.get("display_name") or m.get("displayName"), _kind_from_id(mid)))
+    return out
+
+
 class MissingAPIKeyError(Exception):
     pass
 
@@ -211,9 +313,8 @@ def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
-        items = data.get("data") or data.get("models") or []
-        models = [m.get("id") or m.get("name", "") for m in items if isinstance(m, dict)]
-        return {"ok": True, "models": [m for m in models if m]}
+        # M16-2: คืน list[ModelInfo] (normalize+classify) แทน list[str] — M16-3 จะ persist เป็น cache
+        return {"ok": True, "models": normalize_models(provider, data)}
     except urllib.error.HTTPError as e:
         msg = "key ไม่ถูกต้อง/หมดอายุ" if e.code in (401, 403) else f"HTTP {e.code}"
         return {"ok": False, "error": msg}
