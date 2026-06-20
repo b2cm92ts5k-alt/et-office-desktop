@@ -1109,6 +1109,7 @@ async function openModelPicker(agentId) {
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3
+  await updateImageRow(a);                                              // M17-6 — ช่อง image model
   document.getElementById("m-model").onchange = () => refreshKeyDropdown();
   await refreshKeyDropdown(a);
   document.getElementById("model-backdrop").classList.remove("hidden");
@@ -1143,6 +1144,37 @@ async function loadToolChecklist(allowed) {
     `<label class="inline tool-item" title="${esc(t.desc)}">`
     + `<input type="checkbox" value="${esc(t.name)}"${set.has(t.name) ? " checked" : ""}> ${esc(t.name)}</label>`
   ).join("");
+  // M17-6 — ติ๊ก generate_image → โชว์/ซ่อนช่องเลือก image model
+  box.onchange = () => updateImageRow(agents[pickerAgentId]);
+}
+
+// M17-6 — ช่อง "🎨 Model สร้างภาพ" โผล่เฉพาะตอนเปิด tool generate_image (ไม่งั้น Gear รก)
+function _imageToolOn() {
+  return [...document.querySelectorAll("#m-tools input:checked")].some(c => c.value === "generate_image");
+}
+async function updateImageRow(agent) {
+  const row = document.getElementById("m-image-row");
+  if (!row) return;
+  if (!_imageToolOn()) { row.classList.add("hidden"); return; }
+  let opts = [];
+  try { opts = (await (await fetch(BASE + "/models/available?kind=image")).json()).options || []; } catch {}
+  const sel = document.getElementById("m-image");
+  sel.innerHTML = "";
+  if (!opts.length) {
+    const o = document.createElement("option");
+    o.value = ""; o.textContent = "(ยังไม่มี model สร้างภาพ — เพิ่ม Gemini key ฟรีที่ Settings)";
+    sel.appendChild(o);
+  } else {
+    const cur = agent && agent.image_model ? agent.image_model : null;
+    for (const o of opts) {
+      const op = document.createElement("option");
+      op.value = o.provider + "|" + o.model;
+      op.textContent = o.label;
+      if (cur && cur.provider === o.provider && cur.model === o.model) op.selected = true;
+      sel.appendChild(op);
+    }
+  }
+  row.classList.remove("hidden");
 }
 
 // M11-9 (§5.2) — banner opt-in: แนะนำ cloud specialist ตาม role เมื่อมี key (CEO กดใช้เอง ไม่บังคับ)
@@ -1187,10 +1219,16 @@ async function saveModel() {
   // เลือก model ก่อน → เลือก key/บัญชีจาก dropdown แยก → ผูกเป็น llm.account_id
   const keyRow = document.getElementById("m-key-row");
   llm.account_id = keyRow.classList.contains("hidden") ? "" : document.getElementById("m-key").value;
+  // M17-6 — image_model (เฉพาะเมื่อเปิด tool generate_image + เลือกไว้); ไม่เลือก = ไม่ส่ง (คงค่าเดิม)
+  const body = { llm, thinking_mode, allowed_tools };
+  if (_imageToolOn()) {
+    const iv = document.getElementById("m-image").value;
+    if (iv) body.image_model = parseModelVal(iv);
+  }
   const res = await fetch(BASE + `/agents/${pickerAgentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ llm, thinking_mode, allowed_tools }),
+    body: JSON.stringify(body),
   });
   if (res.ok) {
     const toolNote = allowed_tools.length ? `, ${allowed_tools.length} tool` : "";

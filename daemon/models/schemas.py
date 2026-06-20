@@ -79,6 +79,7 @@ class AgentUpdate(BaseModel):
     backstory: Optional[str] = None
     sprite: Optional[str] = None
     llm: Optional[LLMConfig] = None
+    image_model: Optional[LLMConfig] = None     # M17 — โมเดล generate_image
     allowed_tools: Optional[list[str]] = None   # M11-3
     thinking_mode: Optional[bool] = None        # M11-8
     key_id: Optional[str] = None                # M11-14
