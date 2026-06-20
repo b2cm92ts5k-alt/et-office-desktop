@@ -86,32 +86,55 @@ def available() -> dict:
         "recommended": True,
     }]
 
-    def _model_opts(prov: str) -> list[dict]:
-        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — 1 บรรทัด/model
-
-        account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
-        """
-        cat = cloud_models(prov)
-        if not cat:  # provider ไม่มีใน catalog → fallback default เดิม
-            dm = DEFAULT_CLOUD_MODELS[prov]
-            return [{"provider": prov, "model": dm, "account_id": "",
-                     "label": f"☁ {prov} ({dm})", "recommended": False}]
-        out = []
-        for m in cat:
-            tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
-            out.append({"provider": prov, "model": m["model"], "account_id": "",
-                        "label": f"☁ {m['label']} · {tag}", "recommended": False})
-        return out
-
-    # provider ที่มี credential (account_store หรือ .env) → แสดง catalog ครั้งเดียว/provider
+    # provider ที่มี credential (account_store หรือ .env) → 1 บรรทัด/model/provider
     # (key/บัญชีไหน เลือกที่ key dropdown แยก — กัน model ซ้ำตามจำนวน key)
     from ..services.account_store import account_store
     has_cred = {a["provider"] for a in account_store.all_public()}
     has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
     for prov in ENV_KEY_MAP:  # คงลำดับ provider
         if prov in has_cred:
-            opts.extend(_model_opts(prov))
+            opts.extend(_cloud_model_opts(prov))
     return {"options": opts, "recommended_base": active}
+
+
+def _cloud_model_opts(prov: str) -> list[dict]:
+    """ตัวเลือก cloud model ของ provider (M16-4) — dynamic จาก cache ของ key เป็นหลัก
+
+    1. union "chat" model จากทุก account ของ provider (ลิสต์จริงที่ key เปิด — dedup ตาม id)
+    2. overlay CLOUD_CATALOG: ถ้า id ตรง → ใช้ label ไทย/ราคา/ป้าย ⭐ (curated)
+    3. fallback: ไม่มี cache เลย (.env key ไม่เคย validate / offline ตอน add) → ใช้ catalog ทั้งชุด
+       (ถ้า catalog ก็ว่าง → default_model ตัวเดียว กันลิสต์โล่ง)
+    account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
+    """
+    from ..services.account_store import account_store
+
+    seen: dict[str, dict] = {}   # id -> ModelInfo (ตัวแรกที่เจอ = dedup ข้าม key)
+    for acc in account_store.accounts_for(prov):
+        for mi in acc.get("models") or []:
+            mid = mi.get("id")
+            if mi.get("kind") == "chat" and mid and mid not in seen:
+                seen[mid] = mi
+    cat = {m["model"]: m for m in cloud_models(prov)}   # overlay metadata
+
+    def _opt(mid: str, mi: dict | None, c: dict | None) -> dict:
+        if c:  # catalog match → label/ราคา curated
+            label = c["label"]
+            tag = "🟢 free" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
+        else:  # dynamic ล้วน → ใช้ label/ราคาจาก list-endpoint (เช่น OpenRouter), ไม่มีก็ตามผู้ให้บริการ
+            label = (mi or {}).get("label") or mid
+            pin, pout = (mi or {}).get("price_in"), (mi or {}).get("price_out")
+            tag = f"💰 ${pin}→${pout}/1M" if pin is not None else "ราคาตามผู้ให้บริการ"
+        return {"provider": prov, "model": mid, "account_id": "",
+                "label": f"☁ {label} · {tag}", "recommended": False,
+                "curated": bool(c), "kind": "chat"}   # curated → M16-7 จัดกลุ่ม ⭐
+
+    if seen:  # มี cache จริง = source of truth (โชว์เท่าที่ key เปิดให้ ไม่ยัด catalog ที่ key อาจไม่มี)
+        return [_opt(mid, mi, cat.get(mid)) for mid, mi in seen.items()]
+    if cat:   # ไม่มี cache → fallback catalog ทั้งชุด
+        return [_opt(mid, None, c) for mid, c in cat.items()]
+    dm = DEFAULT_CLOUD_MODELS.get(prov)   # ไม่มีทั้ง cache+catalog → default ตัวเดียว
+    return [{"provider": prov, "model": dm, "account_id": "", "label": f"☁ {prov} ({dm})",
+             "recommended": False, "curated": False, "kind": "chat"}] if dm else []
 
 
 @router.post("/install")
