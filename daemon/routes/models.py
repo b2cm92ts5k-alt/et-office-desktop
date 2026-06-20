@@ -20,6 +20,7 @@ from ..adapters.llm_adapter import (
     ENV_KEY_MAP,
     VRAMDetector,
     active_local_tag,
+    cloud_models,
     ollama_delete,
     ollama_list_installed,
     ollama_pull_stream,
@@ -81,12 +82,35 @@ def available() -> dict:
         "provider": "ollama",
         "model": active,
         "label": f"{active} (local • ใช้ร่วมทั้งทีม)",
+        "account_id": "",
         "recommended": True,
     }]
-    for prov, env in ENV_KEY_MAP.items():
-        if os.environ.get(env):  # มี API key เท่านั้นถึงโผล่ให้เลือก
-            m = DEFAULT_CLOUD_MODELS[prov]
-            opts.append({"provider": prov, "model": m, "label": f"☁ {prov} ({m})", "recommended": False})
+
+    def _model_opts(prov: str) -> list[dict]:
+        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — 1 บรรทัด/model
+
+        account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
+        """
+        cat = cloud_models(prov)
+        if not cat:  # provider ไม่มีใน catalog → fallback default เดิม
+            dm = DEFAULT_CLOUD_MODELS[prov]
+            return [{"provider": prov, "model": dm, "account_id": "",
+                     "label": f"☁ {prov} ({dm})", "recommended": False}]
+        out = []
+        for m in cat:
+            tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
+            out.append({"provider": prov, "model": m["model"], "account_id": "",
+                        "label": f"☁ {m['label']} · {tag}", "recommended": False})
+        return out
+
+    # provider ที่มี credential (account_store หรือ .env) → แสดง catalog ครั้งเดียว/provider
+    # (key/บัญชีไหน เลือกที่ key dropdown แยก — กัน model ซ้ำตามจำนวน key)
+    from ..services.account_store import account_store
+    has_cred = {a["provider"] for a in account_store.all_public()}
+    has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
+    for prov in ENV_KEY_MAP:  # คงลำดับ provider
+        if prov in has_cred:
+            opts.extend(_model_opts(prov))
     return {"options": opts, "recommended_base": active}
 
 
@@ -123,6 +147,35 @@ async def install(req: InstallReq) -> dict:
     loop = asyncio.get_running_loop()
     threading.Thread(target=_pull_worker, args=(loop, tag), daemon=True).start()
     return {"accepted": True, "tag": tag}
+
+
+@router.post("/activate")
+async def activate(req: InstallReq) -> dict:
+    """สลับ active local model ไปยังตัวที่ pull ไว้บน Ollama แล้ว (ไม่ pull ใหม่) — M13-1
+
+    ก่อนหน้านี้ UI มีแค่ install/uninstall ทำให้สลับไป model ที่มีอยู่แล้วไม่ได้ (กดแล้วเงียบ
+    เพราะ install เด้ง 400 'ติดตั้งไว้แล้ว'). endpoint นี้แค่เปลี่ยน setting active_local_model
+    ซึ่งเป็น chokepoint — ทุก ollama agent เด้งมาใช้ตัวใหม่ทันทีตอน get_llm ครั้งถัดไป ไม่ต้อง restart
+    """
+    tag = req.tag.strip()
+    if not tag:
+        raise HTTPException(400, "ไม่ได้ระบุ model")
+    if _installing_tag:
+        raise HTTPException(409, f"กำลังติดตั้ง {_installing_tag} อยู่ — รอให้เสร็จก่อน")
+    if _team_busy():
+        raise HTTPException(409, "ทีมกำลังทำงานอยู่ — รอให้ทีมว่างก่อนค่อยสลับ local model")
+    if tag not in set(ollama_list_installed()):
+        raise HTTPException(400, f"{tag} ยังไม่ได้ติดตั้งบน Ollama — กดติดตั้งก่อนถึงจะสลับมาใช้ได้")
+    prev = active_local_tag()
+    if tag == prev:
+        return {"active": tag, "prev": prev, "changed": False}
+    settings_store.update({"active_local_model": tag})
+    # ปลดตัวเก่าออกจาก VRAM ทันที — กัน resident 2 ตัวช่วงสลับ (กฎ 1-active-local)
+    if prev and prev != tag:
+        ollama_unload(prev)
+    await ws_manager.broadcast({"type": "model.switched",
+                                "data": {"tag": tag, "active": tag, "prev": prev}})
+    return {"active": tag, "prev": prev, "changed": True}
 
 
 @router.post("/uninstall")

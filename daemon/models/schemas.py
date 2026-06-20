@@ -18,10 +18,20 @@ def _new_id() -> str:
     return uuid4().hex[:12]
 
 
+CloudProvider = Literal["claude", "gemini", "openai", "grok", "deepseek"]
+
+
 class LLMConfig(BaseModel):
-    """ค่า model ของ agent — local (ollama) หรือ cloud (claude/gemini/openai)"""
-    provider: Literal["ollama", "claude", "gemini", "openai"] = "ollama"
+    """ค่า model ของ agent — local (ollama) หรือ cloud (claude/gemini/openai/grok/deepseek)
+
+    cloud เลือก credential ได้ 2 ทาง (M14-4): `account_id` (ProviderAccount api_key เข้ารหัส DPAPI)
+    มาก่อน ถ้าว่างจึง fallback `key_id` (M11-14 เดิม) แล้วค่อย default .env — backward compat.
+    เก็บแค่ id อ้างอิง ไม่เคยเก็บ secret.
+    """
+    provider: Literal["ollama", "claude", "gemini", "openai", "grok", "deepseek"] = "ollama"
     model: str = "qwen3:8b"
+    account_id: str = ""   # M14-4 — ProviderAccount (ใหม่)
+    key_id: str = ""       # M11-14 — multi-key เดิม (คงไว้ compat)
 
 
 class AgentConfig(BaseModel):
@@ -36,6 +46,9 @@ class AgentConfig(BaseModel):
     sprite: str = ""                # custom spritesheet ใน data/sprites/ (M6-2 v2)
     is_ceo: bool = False            # ตัวละคร CEO/ผู้ใช้ จาก onboarding (M8) — ไล่ออกไม่ได้
     llm: LLMConfig = LLMConfig()
+    allowed_tools: list[str] = []   # M11-3 whitelist ต่อ role — ว่าง = อนุญาตทุก tool (backward compat)
+    thinking_mode: bool = False     # M11-8 — True = /think (วางแผน, orchestrator); False = /no_think (worker, เร็ว 2-3x)
+    key_id: str = ""                # M11-14 — เลือก cloud key อันไหน (ว่าง = default จาก .env); ไม่เก็บ secret
     status: AgentStatus = "idle"
 
 
@@ -50,6 +63,9 @@ class AgentCreate(BaseModel):
     sprite: str = ""
     is_ceo: bool = False
     llm: LLMConfig = LLMConfig()
+    allowed_tools: list[str] = []   # M11-3
+    thinking_mode: bool = False     # M11-8
+    key_id: str = ""                # M11-14
 
 
 class AgentUpdate(BaseModel):
@@ -62,6 +78,9 @@ class AgentUpdate(BaseModel):
     backstory: Optional[str] = None
     sprite: Optional[str] = None
     llm: Optional[LLMConfig] = None
+    allowed_tools: Optional[list[str]] = None   # M11-3
+    thinking_mode: Optional[bool] = None        # M11-8
+    key_id: Optional[str] = None                # M11-14
 
 
 class TaskRequest(BaseModel):
@@ -125,7 +144,7 @@ class OEPEvent(BaseModel):
 
 
 class ApiKeyRequest(BaseModel):
-    provider: Literal["claude", "gemini", "openai"]
+    provider: Literal["claude", "gemini", "openai", "grok", "deepseek"]
     key: str
 
 

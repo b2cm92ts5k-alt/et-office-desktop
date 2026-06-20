@@ -286,6 +286,18 @@ body.terminal {
 #term-header h1 { flex: 1; }
 body.terminal #feed { flex: 1; margin: 8px 10px; }
 body.terminal #task-form { padding: 0 10px 10px; flex: none; }
+/* M13-7 — แถวเลือกผู้รับ + โหมดคุยเล่น/สั่งงาน */
+#term-controls { display: flex; gap: 6px; padding: 0 10px 6px; flex: none; }
+#target-agent {
+  flex: 1; min-width: 0;
+  background: #0c0c18; color: var(--text, #d8d8f0);
+  border: 1px solid var(--border, #2a2a40); border-radius: 4px;
+  padding: 4px 6px; font-family: inherit; font-size: 9px;
+}
+#target-agent:focus { border-color: var(--cyan); outline: none; }
+#mode-btn { flex: none; font-size: 9px; }
+#mode-btn.chat { border-color: var(--pink, #ff4da6); color: var(--pink, #ff4da6); }
+#mode-btn.chat:hover { background: #ff4da622; box-shadow: 0 0 8px #ff4da655; }
 #grip {
   position: fixed; right: 0; bottom: 0;
   width: 20px; height: 20px;
@@ -425,6 +437,31 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
   border: 1px solid var(--gold); padding: 6px 8px; background: rgba(255, 224, 64, 0.06);
 }
 .warn-note.hidden { display: none; }
+
+/* M11 per-agent settings ในโมดัล: checkbox แนวนอน + tool whitelist (เลื่อน/ห่อบรรทัด) */
+#model-modal label.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 11px; }
+#model-modal label.inline input, #model-modal .tool-item input { width: auto; flex: 0 0 auto; padding: 0; }
+#model-modal h3 { font-family: var(--font-pixel); font-size: 8px; color: var(--cyan); }
+.tool-checklist {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  max-height: 132px; overflow-y: auto;
+  border: 1px solid var(--border); padding: 6px; background: var(--bg);
+}
+.tool-checklist .tool-item {
+  flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--sub); cursor: pointer;
+}
+
+/* M11-14 cloud key list */
+.key-item { display: flex; align-items: center; gap: 6px; margin: 3px 0;
+  font-family: var(--font-mono); font-size: 11px; color: var(--sub); }
+.key-item code { color: var(--cyan); }
+.key-item button.sm { font-size: 10px; padding: 1px 6px; margin-left: auto; }
+.dim { opacity: .55; font-family: var(--font-thai); font-size: 11px; }
+
+/* M12-2 ปุ่มปิดระบบ */
+.neon-btn.danger { border-color: #ff4d6a; color: #ff4d6a; }
+.neon-btn.danger:hover { background: rgba(255, 77, 106, 0.15); }
 
 /* ---------- local model manager (M7-5) ---------- */
 .model-catalog { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }

@@ -99,7 +99,7 @@
         <button class="neon-btn" onclick="saveGithubRepo()">SAVE</button>
       </div>
       <div id="gh-status" class="set-row"></div>
-      <div class="warn-note">ใช้ fine-grained token สิทธิ์เฉพาะ repo ที่ต้องการ (Contents + Issues) — token = สิทธิ์เขียน repo จริง เก็บใน .env เครื่องนี้เท่านั้น</div>
+      <div class="warn-note">ใช้ fine-grained token</div>
 
       <h3>API KEYS — cloud (optional)</h3>
       <div class="set-row key-row">
@@ -107,11 +107,19 @@
           <option value="claude">Claude</option>
           <option value="gemini">Gemini</option>
           <option value="openai">OpenAI</option>
+          <option value="grok">Grok (xAI)</option>
+          <option value="deepseek">DeepSeek</option>
         </select>
+        <input id="key-label" type="text" placeholder="ชื่อเล่น เช่น งานหลัก" autocomplete="off" style="max-width:110px">
         <input id="key-value" type="password" placeholder="วาง API key…" autocomplete="off">
-        <button class="neon-btn" onclick="saveKey()">SAVE</button>
+        <button class="neon-btn" onclick="saveKey()">ADD</button>
       </div>
       <div id="key-status" class="set-row"></div>
+      <div id="keys-list" class="set-row"></div>
+
+      <h3>SKILLS — สูตรทำงานของทีม (M15)</h3>
+      <div class="set-row dim sm">สกิลจะ inject ให้ sub-agent ทำตามอัตโนมัติเมื่องานตรง — ปิดได้ถ้าไม่ต้องการ</div>
+      <div id="skills-list" class="set-row"></div>
 
       <h3>LOCAL MODELS — ติดตั้งเพิ่ม (M7)</h3>
       <div id="model-install-banner" class="model-banner hidden">
@@ -119,7 +127,7 @@
         <div class="mib-bar"><div id="mib-fill" class="mib-fill"></div></div>
       </div>
       <div class="set-row">
-        <button class="neon-btn" onclick="openModelsModal()">📦 Local Model แนะนำ / อื่น ๆ…</button>
+        <button class="neon-btn" onclick="openModelsModal()">📦 Local Model อื่น ๆ</button>
       </div>
       <div id="model-mini-status" class="set-row mc-mini">…</div>
 
@@ -130,7 +138,12 @@
         <button class="neon-btn" onclick="addMcp()">ADD</button>
       </div>
       <div id="mcp-list" class="set-row"></div>
-      <div class="warn-note">tools ของ MCP server จะให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;) ผ่าน permission gate เหมือน tool อื่น</div>
+      <div class="warn-note">MCP server ให้ agent เรียกได้ (ชื่อ mcp__&lt;server&gt;__&lt;tool&gt;)</div>
+
+      <h3>TUNING — multi-agent (M11)</h3>
+      <div class="set-row">
+        <label class="inline"><input type="checkbox" id="reviewer-enabled" onchange="saveReviewer()"> เปิด Reviewer ตรวจคำตอบก่อนส่ง (ช้าลงนิด แม่นขึ้น)</label>
+      </div>
 
       <h3>SOCIAL LOOP</h3>
       <div class="set-row">
@@ -141,6 +154,12 @@
         <label class="inline">cooldown ข้อเสนอ (นาที) <input id="soc-cooldown" type="number" min="0" step="5" class="num"></label>
         <button class="neon-btn" onclick="saveSocial()">SAVE</button>
       </div>
+
+      <h3>ระบบ (M12)</h3>
+      <div class="set-row">
+        <button class="neon-btn danger" onclick="shutdownSystem()">⏻ ปิด ET Office</button>
+      </div>
+      <div class="warn-note">ปิด daemon + wallpaper + sidebar ทั้งหมดหรือพิมพ์ <code>/exit</code> ใน terminal</div>
     </div>
   </section>
 </div>
@@ -210,7 +229,7 @@
 <div id="models-backdrop" class="hidden" onclick="closeModelsModal(event)">
   <div id="models-modal">
     <h2>LOCAL MODELS</h2>
-    <div class="models-sub">เลือกติดตั้ง local model เพิ่ม — ตัวที่ VRAM ไม่พอจะถูกล็อก · ติดตั้งได้ครั้งละ 1 ตัว</div>
+    <div class="models-sub">เลือกติดตั้ง local model — ตัวที่ VRAM ไม่พอจะถูกล็อก · ใช้งานได้ครั้งละ 1 ตัว</div>
     <div id="model-catalog" class="model-catalog"><div class="empty-note">กำลังโหลด…</div></div>
     <div class="modal-actions"><button class="ghost" onclick="closeModelsModal()">ปิด</button></div>
   </div>
@@ -251,7 +270,15 @@
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
     <label>Model AI <select id="m-model"></select></label>
+    <label id="m-key-row" class="hidden">Key / บัญชี <select id="m-key"></select></label>
+    <div id="m-specialist" class="hidden"></div>
     <div class="warn-note">เพิ่ม model อื่นได้ที่ SETTINGS — Local Models (ลง local เพิ่ม) หรือ API Keys (cloud)</div>
+
+    <label class="inline" style="margin-top:8px"><input type="checkbox" id="m-thinking"> โหมดคิดก่อนตอบ /think (วางแผน/orchestrator — ช้าลงแต่แม่นขึ้น; ปิด = worker เร็ว)</label>
+
+    <h3 style="margin:10px 0 4px">สิทธิ์ใช้ tool (M11-3)</h3>
+    <div class="warn-note">ติ๊กเฉพาะ tool ที่อนุญาต — <b>ไม่ติ๊กเลย = อนุญาตทุก tool</b></div>
+    <div id="m-tools" class="tool-checklist"></div>
     <div class="modal-actions">
       <button class="ghost" onclick="closeModelPicker()">ยกเลิก</button>
       <button class="neon-btn" onclick="saveModel()">SAVE</button>

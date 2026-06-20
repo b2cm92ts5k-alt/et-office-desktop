@@ -7,13 +7,11 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
-from crewai import Agent, Crew, Process, Task
-
-from ..adapters.llm_adapter import get_llm
 from ..database import ProposalRow, get_session
-from ..models.schemas import AgentConfig, Proposal, TaskLog
+from ..models.schemas import Proposal, TaskLog
 from .agent_registry import registry
 from .log_service import log_service
+from .permission_gate import permission_gate
 from .ws_manager import ws_manager
 
 
@@ -92,65 +90,54 @@ class ProposalService:
             asyncio.create_task(self._execute(proposal))
         return proposal
 
-    # --- M3-11: approved proposal → CrewAI ทำงานจริง ---
+    # --- M13-3: approved proposal → ทำงานจริงผ่าน tool-loop (ToolExecutor + permission gate) ---
 
     async def _execute(self, proposal: Proposal) -> None:
-        agents = [a for pid in proposal.proposed_by if (a := registry.get(pid))]
+        """รัน lead agent ผ่าน task_router.run_sync — เส้นทางเดียวกับงานปกติ จึงสร้าง/แก้
+        ไฟล์ใน workspace ได้จริง (ไม่ใช่แค่ตอบ text แบบ crew เดิม) และทุก action ผ่าน
+        permission gate ตามกฎเหล็ก M6. CEO ไม่ลงมือเอง → คัดออกจากผู้ลงมือ (M13-8)"""
+        from .task_router import task_router  # lazy — กัน circular import
+
+        agents = [a for pid in proposal.proposed_by if (a := registry.get(pid)) and not a.is_ceo]
         if not agents:
-            agents = registry.all()[:1]  # ผู้เสนอถูกลบไปแล้ว → ตัวแรกรับช่วง
-        task = TaskLog(message=f"[proposal] {proposal.title}",
-                       agent_id=agents[0].id, agent_name=agents[0].name,
-                       status="working")
+            agents = [a for a in registry.all() if not a.is_ceo][:1]  # ผู้เสนอถูกลบ → ตัวอื่นรับช่วง
+        if not agents:
+            log_service.add("error", f"proposal {proposal.id}: ไม่มี agent รับงาน")
+            return
+        lead = agents[0]
+        brief = f"{proposal.title}\n\nรายละเอียด: {proposal.detail or '-'}"
+        task = TaskLog(
+            message=f"[ข้อเสนอที่ทีมอนุมัติแล้ว] ลงมือทำให้เกิดผลจริงในworkspace:\n{brief}",
+            agent_id=lead.id, agent_name=lead.name, status="working")
         log_service.save_task(task)
 
         for a in agents:
             await self._set_status(a.id, "working")
+        metrics: dict = {}
         try:
-            output = await asyncio.to_thread(self._run_crew, proposal, agents)
+            output = await asyncio.to_thread(task_router.run_sync, task, lead, metrics)
             task.status, task.output, task.finished_at = "completed", output, _now()
             log_service.save_task(task)
+            log_service.add("task", f"proposal {proposal.id} เสร็จ: {proposal.title[:80]}", lead.id)
             await ws_manager.broadcast({
                 "type": "proposal.completed",
                 "data": {"proposal_id": proposal.id, "title": proposal.title,
-                         "agent_ids": [a.id for a in agents], "output": output},
+                         "agent_id": lead.id, "agent_ids": [a.id for a in agents],
+                         "output": output},
             })
         except Exception as exc:
             task.status, task.output, task.finished_at = "failed", str(exc), _now()
             log_service.save_task(task)
-            log_service.add("error", f"proposal {proposal.id} execution failed: {exc}")
+            log_service.add("error", f"proposal {proposal.id} execution failed: {exc}", lead.id)
             await ws_manager.broadcast({
                 "type": "proposal.failed",
-                "data": {"proposal_id": proposal.id, "error": str(exc)},
+                "data": {"proposal_id": proposal.id, "title": proposal.title,
+                         "agent_id": lead.id, "error": str(exc)},
             })
         finally:
+            permission_gate.finish_task(task.task_id)  # ล้างสิทธิ์อนุมัติยกชุด (M6-8)
             for a in agents:
                 await self._set_status(a.id, "idle")
-
-    def _run_crew(self, proposal: Proposal, agents: list[AgentConfig]) -> str:
-        """sync ใน thread — lead วางแผน, partner ลงมือต่อ (ถ้ามี)"""
-        crew_agents = [Agent(
-            role=a.role,
-            goal=a.system_prompt or f"ช่วยเหลือทีมในฐานะ {a.role}",
-            backstory=a.backstory or f"คุณคือ {a.name} ทีมงาน ET Office",
-            llm=get_llm(a.llm), verbose=False,
-        ) for a in agents]
-
-        brief = f"{proposal.title}\n\nรายละเอียด: {proposal.detail or '-'}"
-        tasks = [Task(
-            description=f"ทีมอนุมัติข้อเสนอนี้แล้ว ลงมือทำให้เกิดผลจริง:\n{brief}",
-            agent=crew_agents[0],
-            expected_output="ผลงานตามข้อเสนอ พร้อมสรุปสั้น ๆ ว่าได้อะไร (ภาษาไทย)",
-        )]
-        if len(crew_agents) > 1:
-            tasks.append(Task(
-                description="ตรวจและต่อยอดผลงานจากเพื่อนร่วมทีม ให้สมบูรณ์พร้อมใช้",
-                agent=crew_agents[1],
-                expected_output="ผลงานฉบับสมบูรณ์ (ภาษาไทย)",
-            ))
-        crew = Crew(agents=crew_agents, tasks=tasks,
-                    process=Process.sequential, verbose=False)
-        result = crew.kickoff()
-        return getattr(result, "raw", str(result))
 
     async def _set_status(self, agent_id: str, status: str) -> None:
         registry.set_status(agent_id, status)

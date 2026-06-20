@@ -12,6 +12,10 @@ build/
 dist/
 .pytest_cache/
 
+# --- debug / scratch ---
+_vdesktop.png
+*_vdesktop.png
+
 # --- data (runtime) ---
 *.sqlite
 *.sqlite3
@@ -37,3 +41,8 @@ Desktop.ini
 *.spec
 !installer/et-office.spec
 pyinstaller-build/
+daemon_qa*.log
+daemon/data/cloud_keys.json
+daemon/data/cloud_accounts.enc
+daemon/data/cloud_accounts.json
+daemon/data/launcher_run.json

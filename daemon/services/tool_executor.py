@@ -33,6 +33,7 @@ TOOLS_SPEC = {
     "move":       {"args": ["src", "dst"],      "desc": "ย้าย/เปลี่ยนชื่อไฟล์หรือโฟลเดอร์"},
     "delete":     {"args": ["path"],            "desc": "ลบไฟล์ (โฟลเดอร์ต้องว่างถึงลบได้)"},
     "powershell": {"args": ["command"],         "desc": "รันคำสั่ง PowerShell ใน workspace"},
+    "web_search": {"args": ["query"],           "desc": "ค้นเว็บ คืน title+url+สรุปสั้น (เอา url ไป fetch_url ต่อ)"},
     "fetch_url":  {"args": ["url"],             "desc": "ดึงเนื้อหาจากเว็บ (GET, text เท่านั้น)"},
     # GitHub (M9-4) — ต้องเชื่อม token + ตั้ง repo ใน Settings ก่อน, ทุก action ผ่าน permission gate
     "gh_list_issues":   {"args": ["state"],            "desc": "ดู issue/Task ใน GitHub repo (state: open/closed/all)"},
@@ -45,6 +46,29 @@ TOOLS_SPEC = {
     "git_commit": {"args": ["message"], "desc": "git add -A แล้ว commit ใน workspace"},
     "git_push":   {"args": [],          "desc": "git push ขึ้น remote ที่ตั้งไว้"},
 }
+
+
+# M11-3 (§3.3) — preset whitelist แนะนำต่อ role (UI/hire เอาไปตั้ง allowed_tools ได้)
+# ไม่ได้บังคับใช้เอง — เป็นแค่ค่าแนะนำ; การบังคับจริงดูที่ tool_allowed() + task_router
+ROLE_TOOL_PRESETS: dict[str, list[str]] = {
+    "coder":      ["read_file", "write_file", "list_dir", "mkdir", "move",
+                   "git_status", "git_diff", "git_commit", "git_push"],
+    "designer":   ["read_file", "write_file", "list_dir", "mkdir"],
+    "researcher": ["read_file", "write_file", "list_dir", "web_search", "fetch_url"],
+    "producer":   ["read_file", "list_dir",
+                   "gh_list_issues", "gh_create_issue", "gh_comment_issue", "gh_close_issue"],
+}
+
+
+def tool_allowed(tool: str, allowed_tools: list[str] | None) -> bool:
+    """M11-3 — เช็ค whitelist ต่อ role ก่อนรัน tool
+
+    ว่าง/None = อนุญาตทุก tool (backward compat กับ agent เดิมที่ไม่ได้ตั้ง).
+    ตั้งรายการแล้ว = อนุญาตเฉพาะที่อยู่ในรายการ (เช่น designer เรียก git_push ไม่ได้).
+    """
+    if not allowed_tools:
+        return True
+    return tool in allowed_tools
 
 
 class WorkspaceError(Exception):
@@ -135,6 +159,57 @@ def _git(git_args: list[str], root: Path) -> str:
     return _clip(out)
 
 
+def _web_search(query: str, n: int = 6) -> str:
+    """ค้นเว็บ (M15-4) — มี BRAVE_API_KEY ใน env → Brave (สะอาด); ไม่งั้น DuckDuckGo keyless
+
+    คืน text รายการ title + url + สรุปสั้น ให้ agent เลือก url ไป fetch_url ต่อ. ไม่เก็บ key ใน log.
+    """
+    import os
+    import re
+    import urllib.parse
+
+    q = query.strip()
+    if not q:
+        return "ต้องมี query"
+    key = os.environ.get("BRAVE_API_KEY", "").strip()
+    try:
+        if key:  # Brave Search API (optional) — JSON สะอาดกว่า
+            url = "https://api.search.brave.com/res/v1/web/search?q=" + urllib.parse.quote(q) + f"&count={n}"
+            req = urllib.request.Request(url, headers={
+                "Accept": "application/json", "X-Subscription-Token": key, "User-Agent": "ET-Office/0.1"})
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT_SEC) as r:
+                data = json.loads(r.read().decode("utf-8", errors="replace"))
+            items = [{"title": w.get("title", ""), "url": w.get("url", ""),
+                      "snippet": re.sub("<[^>]+>", "", w.get("description", ""))}
+                     for w in (data.get("web", {}).get("results", []) or [])[:n]]
+        else:  # DuckDuckGo HTML (keyless) — ต้อง POST form (GET คืนแค่หน้าฟอร์ม)
+            req = urllib.request.Request(
+                "https://html.duckduckgo.com/html/",
+                data=urllib.parse.urlencode({"q": q}).encode(),
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ET-Office/0.1",
+                         "Content-Type": "application/x-www-form-urlencoded"})
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT_SEC) as r:
+                html = r.read(FETCH_CAP_BYTES).decode("utf-8", errors="replace")
+            items = []
+            hrefs = re.findall(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html, re.S)
+            snips = [re.sub("<[^>]+>", "", s).strip()
+                     for s in re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, re.S)]
+            for i, (href, title) in enumerate(hrefs[:n]):
+                real = href
+                if "uddg=" in href:
+                    real = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("uddg", [href])[0]
+                items.append({"title": re.sub("<[^>]+>", "", title).strip(),
+                              "url": real, "snippet": snips[i] if i < len(snips) else ""})
+    except urllib.error.HTTPError as e:
+        return f"web_search error {e.code} (ลองใหม่/เปลี่ยนคำค้น หรือใส่ BRAVE_API_KEY)"
+    except Exception as exc:  # noqa: BLE001
+        return f"web_search ล้มเหลว: {str(exc)[:120]}"
+    if not items:
+        return "ไม่พบผลลัพธ์ (ลองเปลี่ยนคำค้น)"
+    return "\n".join(f"{i+1}. {it['title']}\n   {it['url']}\n   {_clip(it['snippet'], 200)}"
+                     for i, it in enumerate(items))
+
+
 def execute(tool: str, args: dict) -> str:
     """รัน tool หนึ่งครั้ง — เรียกหลังผ่าน permission gate แล้วเท่านั้น"""
     if tool.startswith("gh_"):
@@ -197,6 +272,9 @@ def execute(tool: str, args: dict) -> str:
             out = r.stdout.decode("utf-8", errors="replace")
             err = r.stderr.decode("utf-8", errors="replace")
             return _clip(f"exit={r.returncode}\n{out}" + (f"\nSTDERR:\n{err}" if err.strip() else ""))
+
+        if tool == "web_search":
+            return _web_search(str(args.get("query", "")))
 
         if tool == "fetch_url":
             url = str(args.get("url", "")).strip()

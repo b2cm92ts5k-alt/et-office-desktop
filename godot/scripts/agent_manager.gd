@@ -33,6 +33,21 @@ const DORM_BEDS: Array[Vector2i] = [
 const BUNK_CAP := 2
 const NO_SPOT := Vector2i(-1, -1)  # sentinel: zone เต็ม (ไม่มีที่ว่าง)
 
+# CEO ยืนประจำที่โต๊ะตัวเองใน EXEC SUITE เสมอ (3,2) ตรง desk_ceo.png — ไม่ใช่โต๊ะพนักงาน
+# (CEO มิ.ย. 2026 ข้อ 5) — กันออกจาก DESK_SPOTS pool + ไม่ roam + ไม่ถูกส่งนอนกลางคืน
+const CEO_DESK := Vector2i(3, 2)
+
+# Idle-roam (M13-6) — agent ที่ว่างนาน ๆ สุ่มเดินเล่นตาม aisle แล้วกลับโต๊ะ (ดูมีชีวิต ไม่ยืนนิ่ง)
+# cells ช่องทางเดินระหว่างโต๊ะ (โต๊ะอยู่ y=1,3,5 → เดินเล่น y=2,4,6) — nav เดินผ่านได้ ไม่ชนผนัง
+const ROAM_CHECK_SEC := 6.0
+const ROAM_CHANCE := 0.35
+const ROAM_SPOTS: Array[Vector2i] = [
+	Vector2i(8, 2), Vector2i(10, 2), Vector2i(12, 2),
+	Vector2i(8, 4), Vector2i(10, 4), Vector2i(12, 4),
+	Vector2i(6, 6), Vector2i(8, 6), Vector2i(10, 6),
+	Vector2i(3, 4), Vector2i(5, 6),
+]
+
 # map ชื่อ role (จาก daemon registry) → sprite key (ชื่อไฟล์ char_<key>.png)
 const ROLE_SPRITES := {
 	"producer": "producer", "project manager": "producer",
@@ -50,6 +65,7 @@ var _spot_owner: Dictionary = {}  # Vector2i -> agent_id (1 จุด 1 คน)
 var _bed_of: Dictionary = {}      # agent_id -> {"cell": Vector2i, "bunk": int}
 var _bed_occ: Dictionary = {}     # "x,y" -> Array[String] ขนาด BUNK_CAP (index=bunk, ""=ว่าง)
 var _auto_slept: Dictionary = {}  # agent_id -> true เมื่อหลับโดย night logic (ไม่ใช่ daemon)
+var _ceo_ids: Dictionary = {}     # agent_id -> true สำหรับ CEO (ยืนประจำ 3,2 ไม่ roam/ไม่นอน)
 var _nav: OfficeNav
 var _http: HTTPRequest
 var _fx: FxFactory               # M3-8 — เล่น pixel FX ตาม event
@@ -79,6 +95,13 @@ func _ready() -> void:
 	night_timer.timeout.connect(_check_night_shift)
 	add_child(night_timer)
 	night_timer.start()
+
+	# M13-6 — idle-roam: agent ว่างเดินเล่นในห้องเป็นระยะ
+	var roam_timer := Timer.new()
+	roam_timer.wait_time = ROAM_CHECK_SEC
+	roam_timer.timeout.connect(_roam_tick)
+	add_child(roam_timer)
+	roam_timer.start()
 
 
 func _fetch_agents() -> void:
@@ -114,12 +137,16 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	var id := str(cfg.get("id", ""))
 	if id.is_empty() or _agents.has(id):
 		return
+	var is_ceo: bool = bool(cfg.get("is_ceo", false))
+	if is_ceo:
+		_ceo_ids[id] = true
 	var sprite := AgentSprite.new()
 	sprite.setup(id, str(cfg.get("name", "agent")),
 		_sprite_key_for(str(cfg.get("role", "")) + " " + str(cfg.get("name", ""))),
 		Color(str(cfg.get("color", "#00e5ff"))),
 		str(cfg.get("sprite", "")))  # custom spritesheet (M6-2 v2)
-	var desk := _claim_desk(id, index)
+	# CEO ยืนโต๊ะตัวเองที่ (3,2) เสมอ ไม่กิน DESK_SPOTS ของพนักงาน (ข้อ 5)
+	var desk := CEO_DESK if is_ceo else _claim_desk(id, index)
 	_desk_of[id] = desk
 	sprite.place_at(desk)
 	# จอ hologram ประจำโต๊ะ (M3-7) — position = cell เดียวกับ desk/agent (y-sort คีย์เท่ากัน)
@@ -163,6 +190,8 @@ func _on_event(event: Dictionary) -> void:
 			_flash_screen(str(data.get("agent_id", "")), "error")
 		"social.chat":
 			_say(data, str(data.get("text", "")))
+		"agent.chat":
+			_say(data, str(data.get("text", "")))  # M13-7 — คุยเล่นกับผู้ใช้ โชว์ bubble
 		"proposal.created":
 			var by: Array = data.get("proposed_by", [])
 			if not by.is_empty():
@@ -177,6 +206,7 @@ func _on_event(event: Dictionary) -> void:
 				_release_desk(id)
 				_desk_of.erase(id)
 				_auto_slept.erase(id)
+				_ceo_ids.erase(id)
 				_agents[id].queue_free()
 				_agents.erase(id)
 				if _screens.has(id):
@@ -266,6 +296,29 @@ func _go_zone(sprite: AgentSprite, agent_id: String, zone: String) -> void:
 	var spot := _claim_spot(zone, agent_id)
 	if spot != NO_SPOT:
 		_walk_to(sprite, spot)
+
+
+# --- Idle-roam (M13-6) — agent ว่างเดินเล่นในห้องให้ดูมีชีวิต -------------
+
+func _roam_tick() -> void:
+	# เฉพาะ agent ที่ idle จริง (ไม่ใช่ working/break/sleep), ไม่ใช่ CEO (ยืนประจำ 3,2),
+	# ไม่กำลังเดินอยู่, และกลางวัน (กลางคืนปล่อย night logic จัดการ)
+	if _is_night():
+		return
+	for id: String in _agents:
+		if _ceo_ids.has(id):
+			continue
+		var sprite: AgentSprite = _agents[id]
+		if sprite.status != "idle" or sprite.is_walking():
+			continue
+		if randf() >= ROAM_CHANCE:
+			continue
+		var home: Vector2i = _desk_of.get(id, DESK_SPOTS[0])
+		# อยู่นอกโต๊ะแล้ว → ครึ่งหนึ่งเดินกลับโต๊ะ, ครึ่งหนึ่งเดินเล่นต่อ (ไม่ดริฟต์หายไปไกล)
+		if sprite.grid_pos() != home and randf() < 0.5:
+			_walk_to(sprite, home)
+		else:
+			_walk_to(sprite, ROAM_SPOTS.pick_random())
 
 
 # --- desk (1 โต๊ะ 1 คน — ข้อ 2) ---------------------------------------
@@ -367,7 +420,8 @@ func _check_night_shift() -> void:
 	if _is_night():
 		for id: String in ids:
 			var sprite: AgentSprite = _agents[id]
-			if id != night_shift and sprite.status == "idle":
+			# CEO ไม่เข้านอน dorm — ยืนประจำโต๊ะตัวเอง (ข้อ 5)
+			if id != night_shift and not _ceo_ids.has(id) and sprite.status == "idle":
 				_auto_slept[id] = true
 				_apply_status(id, "sleep", false)
 	elif not _auto_slept.is_empty():

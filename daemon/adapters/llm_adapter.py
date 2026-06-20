@@ -5,8 +5,13 @@ key ไม่เคยอยู่ใน agent config / registry / log (privacy 
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import subprocess
+import threading
+import time
+from collections import OrderedDict
 
 from crewai import LLM
 
@@ -14,21 +19,237 @@ from ..models.schemas import LLMConfig
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
+# --- LLM response cache (M11-4, §3.6) ---
+# งานซ้ำ ๆ (เช่น commit message สั้น) ไม่ต้องยิง model ใหม่ — key = hash(model+messages+temp+schema)
+# creative (temp > CACHE_TEMP_MAX) ข้าม cache เพราะอยากได้คำตอบหลากหลาย
+CACHE_MAX = 100          # LRU entries
+CACHE_TTL = 600          # วินาที (10 นาที)
+CACHE_TEMP_MAX = 0.5     # temp เกินนี้ = creative → ไม่ cache
+_cache: "OrderedDict[str, tuple[float, str]]" = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _cache_key(model: str, messages: list[dict], temperature: float, schema: dict | None) -> str:
+    blob = json.dumps(
+        {"m": model, "msgs": messages, "t": temperature, "s": schema},
+        ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str) -> str | None:
+    with _cache_lock:
+        item = _cache.get(key)
+        if item is None:
+            return None
+        ts, val = item
+        if time.time() - ts > CACHE_TTL:
+            _cache.pop(key, None)  # หมดอายุ
+            return None
+        _cache.move_to_end(key)    # LRU touch
+        return val
+
+
+def _cache_put(key: str, val: str) -> None:
+    with _cache_lock:
+        _cache[key] = (time.time(), val)
+        _cache.move_to_end(key)
+        while len(_cache) > CACHE_MAX:
+            _cache.popitem(last=False)  # ทิ้งตัวเก่าสุด
+
+
+def cache_clear() -> None:
+    """ล้าง cache ทั้งหมด (ใช้ตอนสลับ active model / เทส)"""
+    with _cache_lock:
+        _cache.clear()
+
 ENV_KEY_MAP = {
     "claude": "ANTHROPIC_API_KEY",
     "gemini": "GOOGLE_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "grok": "XAI_API_KEY",        # M14-2 — xAI (console.x.ai)
+    "deepseek": "DEEPSEEK_API_KEY",  # M14-2 — DeepSeek (platform.deepseek.com)
 }
 
 DEFAULT_CLOUD_MODELS = {
     "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o",
+    "grok": "grok-4.1-fast",       # ตัวถูก+เร็ว เป็น default ปลอดภัย
+    "deepseek": "deepseek-v4-flash",
 }
+
+# M14-2 — LiteLLM provider prefix ต่อ provider (CrewAI LLM ส่งต่อ litellm).
+# deepseek เป็น native provider ของ litellm → "deepseek/" ตรง ๆ.
+LLM_PREFIX = {"claude": "anthropic", "gemini": "gemini", "openai": "openai",
+              "deepseek": "deepseek"}
+
+# M14-2 — provider ที่ litellm ไม่มี native แต่ endpoint เป็น OpenAI-compatible → route ผ่าน
+# "openai/<model>" + base_url. Grok (xAI) ไม่มี native provider "xai" ใน CrewAI build นี้
+# (และไม่ได้ลง litellm fallback) จึงต้องยิงแบบ openai-compatible ที่ api.x.ai/v1.
+CLOUD_BASE_URL = {"grok": "https://api.x.ai/v1"}
 
 
 class MissingAPIKeyError(Exception):
     pass
+
+
+# M11-9 (§4.1/5.1) — specialist cloud แนะนำต่อ role (opt-in: โชว์ banner เมื่อมี key, CEO กดเอง ไม่บังคับ)
+# cloud ไม่กิน VRAM → ไม่ละเมิด 1-active-local; default ทุก agent ยังเป็น local qwen3
+SPECIALIST_PRESETS: list[dict] = [
+    {"match": ["producer", "orchestrat", "วางแผน", "manager", "เลขา"],
+     "provider": "claude", "model": "claude-sonnet-4-6", "reason": "วางแผน/แตกงานหลายขั้น แม่นสุด"},
+    {"match": ["coder", "program", "dev", "เขียนโค้ด", "โปรแกรม", "วิศวกร"],
+     "provider": "claude", "model": "claude-sonnet-4-6", "reason": "code quality สูงสุด"},
+    {"match": ["design", "ดีไซน์", "ออกแบบ", "ศิลป", "กราฟิก"],
+     "provider": "openai", "model": "gpt-4o", "reason": "multimodal รับภาพได้"},
+    {"match": ["research", "วิจัย", "ค้นคว้า", "หาข้อมูล", "วิเคราะห์"],
+     "provider": "gemini", "model": "gemini-2.5-flash", "reason": "ถูก+เร็ว web grounding ดี"},
+]
+
+
+# M11-13 (#141) — catalog cloud model ต่อ provider: 1 key เลือกได้หลายตัว (ไม่ฟิก)
+# tier: "free" (Google free tier) / "paid" (in/out = USD ต่อ 1M token) — ป้อน cost_guard per-model
+# หมายเหตุ: model id อ้างชื่อจากภาพ CEO (มิ.ย.2026) — gemini-2.5-flash ยืนยันใช้ได้จริง,
+# ตัวอื่นปรับ id ให้ตรง API ปัจจุบันได้ที่นี่ที่เดียว (CEO แก้ catalog ได้)
+CLOUD_CATALOG: dict[str, list[dict]] = {
+    # verified กับ Google key จริง (มิ.ย.2026): 2.5-flash / 2.5-flash-lite = OK,
+    # 2.5-pro = id ถูกแต่ free tier มัก 429 (rate limit). Gemini 3 (gemini-3-flash /
+    # gemini-3.1-flash-lite) คืน 404 — ยังไม่เปิด/ชื่อ id ต่าง → ตัดออก ใส่กลับเมื่อยืนยัน id จริง
+    "gemini": [
+        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro (อาจชน limit free tier)", "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",       "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
+    ],
+    "claude": [
+        {"model": "claude-opus-4-8",   "label": "Claude Opus 4.8",   "tier": "paid", "in": 5, "out": 25},
+        {"model": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "paid", "in": 3, "out": 15},
+        {"model": "claude-haiku-4-5",  "label": "Claude Haiku 4.5",  "tier": "paid", "in": 1, "out": 5},
+    ],
+    "openai": [
+        {"model": "gpt-5.5",      "label": "GPT-5.5",      "tier": "paid", "in": 5,   "out": 30},
+        {"model": "gpt-5.5-pro",  "label": "GPT-5.5 Pro",  "tier": "paid", "in": 30,  "out": 180},
+        {"model": "gpt-5.4",      "label": "GPT-5.4",      "tier": "paid", "in": 2.5, "out": 15},
+        {"model": "gpt-5.4-mini", "label": "GPT-5.4 Mini", "tier": "paid", "in": 0.75, "out": 4.5},
+        {"model": "gpt-5.4-nano", "label": "GPT-5.4 Nano", "tier": "paid", "in": 0.2, "out": 1.25},
+        {"model": "o3",           "label": "o3",           "tier": "paid", "in": 2,   "out": 8},
+        {"model": "o3-mini",      "label": "o3-mini",      "tier": "paid", "in": 1,   "out": 4},
+        {"model": "o1",           "label": "o1",           "tier": "paid", "in": 15,  "out": 60},
+        {"model": "o1-pro",       "label": "o1-Pro",       "tier": "paid", "in": 150, "out": 180},
+    ],
+    # M14-3 — Grok (xAI). id อ้างชื่อจากภาพ CEO (มิ.ย.2026); ปรับให้ตรง API จริงได้ที่นี่ที่เดียว
+    "grok": [
+        {"model": "grok-4.3",        "label": "Grok 4.3 (flagship · 1M ctx)", "tier": "paid", "in": 5,   "out": 15},
+        {"model": "grok-4.20",       "label": "Grok 4.20 (reasoning)",        "tier": "paid", "in": 3,   "out": 15},
+        {"model": "grok-4.1-fast",   "label": "Grok 4.1 Fast",                "tier": "paid", "in": 0.5, "out": 2},
+        {"model": "grok-build-0.1",  "label": "Grok Build 0.1 (coding)",      "tier": "paid", "in": 2,   "out": 10},
+    ],
+    # M14-3 — DeepSeek (ไม่มี subscription — API key ล้วน). ราคาถูกมากเป็นจุดขาย
+    "deepseek": [
+        {"model": "deepseek-v4-flash", "label": "DeepSeek V4-Flash",            "tier": "paid", "in": 0.3, "out": 1.1},
+        {"model": "deepseek-v4-pro",   "label": "DeepSeek V4-Pro (1.6T MoE)",   "tier": "paid", "in": 0.6, "out": 2.2},
+    ],
+}
+
+
+def cloud_models(provider: str) -> list[dict]:
+    """รายชื่อ cloud model ของ provider (M11-13) — ว่าง = provider นั้นไม่มี catalog"""
+    return CLOUD_CATALOG.get(provider, [])
+
+
+# M14-5 — endpoint สำหรับ validate API key (ping ดูว่า key ใช้ได้ + ดึงรายชื่อ model จริง)
+# header ต่อ provider ต่างกัน: claude=x-api-key, openai/grok/deepseek=Bearer, gemini=?key=
+_VALIDATE_EP: dict[str, dict] = {
+    "claude":   {"url": "https://api.anthropic.com/v1/models",
+                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
+    "openai":   {"url": "https://api.openai.com/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "grok":     {"url": "https://api.x.ai/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "deepseek": {"url": "https://api.deepseek.com/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    "gemini":   {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
+                 "headers": lambda k: {}},
+}
+
+
+def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
+    """ping provider ด้วย key → {ok, models?, error?} (M14-5)
+
+    เรียก endpoint list-models ที่ราคาถูก/ฟรี — 200 = key ใช้ได้ + ดึง id model จริงมาด้วย
+    (เก็บเป็น allowed_models ของ account). 401/403 = key ผิด. ไม่ log/ไม่คาย key.
+    """
+    import urllib.error
+    import urllib.request
+    ep = _VALIDATE_EP.get(provider)
+    if not ep:
+        return {"ok": False, "error": f"provider {provider} ไม่รองรับ validate"}
+    url = ep["url"].format(k=key)
+    req = urllib.request.Request(url, headers=ep["headers"](key), method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        items = data.get("data") or data.get("models") or []
+        models = [m.get("id") or m.get("name", "") for m in items if isinstance(m, dict)]
+        return {"ok": True, "models": [m for m in models if m]}
+    except urllib.error.HTTPError as e:
+        msg = "key ไม่ถูกต้อง/หมดอายุ" if e.code in (401, 403) else f"HTTP {e.code}"
+        return {"ok": False, "error": msg}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"เชื่อมต่อไม่ได้: {str(e)[:80]}"}
+
+
+def cloud_price(provider: str, model: str) -> tuple[float, float] | None:
+    """ราคา (in, out) USD/1M token ของ model จาก catalog — None ถ้าไม่อยู่ใน catalog (M11-13)"""
+    for m in CLOUD_CATALOG.get(provider, []):
+        if m["model"] == model:
+            return (float(m["in"]), float(m["out"]))
+    return None
+
+
+def specialist_for(role: str = "", keywords: list[str] | None = None) -> dict | None:
+    """หา specialist cloud ที่เหมาะกับ role (M11-9) — คืน {provider, model, reason} หรือ None
+
+    match จาก role + keywords (ไม่สน case). ใช้โชว์ banner ตอน hire/gear — ไม่เปลี่ยน model เอง.
+    """
+    hay = (role + " " + " ".join(keywords or [])).lower()
+    for p in SPECIALIST_PRESETS:
+        if any(kw in hay for kw in p["match"]):
+            return {"provider": p["provider"], "model": p["model"], "reason": p["reason"]}
+    return None
+
+
+def available_cloud_providers() -> dict:
+    """provider ไหนมี API key พร้อมใช้ (M11-9/14) — มี key ใน .env default หรือใน key store"""
+    from ..services.cloud_keys import cloud_keys
+    return {prov: bool(os.environ.get(env) or cloud_keys.keys_for(prov))
+            for prov, env in ENV_KEY_MAP.items()}
+
+
+def _resolve_cloud_key(provider: str, account_id: str = "", key_id: str = "") -> str:
+    """หา credential จริงของ cloud call — เรียงลำดับความสำคัญ (M14-4, ต่อยอด M11-14):
+
+    1. `account_id` → ProviderAccount (api_key, เข้ารหัส DPAPI)
+    2. `key_id` → cloud_keys store (M11-14 เดิม) — backward compat
+    3. default: .env ก่อน แล้วค่อย key แรกใน store
+    agent เก็บแค่ id อ้างอิง ไม่เก็บ secret.
+    """
+    if account_id:
+        from ..services.account_store import account_store
+        acc = account_store.get(account_id)
+        if acc:
+            tok = acc.get("secret", {}).get("key", "")
+            if tok:
+                return tok
+    from ..services.cloud_keys import cloud_keys
+    if key_id:
+        k = cloud_keys.get(key_id)
+        if k:
+            return k
+    env_key = os.environ.get(ENV_KEY_MAP.get(provider, ""), "")
+    if env_key:
+        return env_key
+    store = cloud_keys.keys_for(provider)
+    return store[0].get("key", "") if store else ""
 
 
 def active_local_tag() -> str:
@@ -51,16 +272,105 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
         # บังคับใช้ active tag เดียวเสมอ (ไม่สน cfg.model) — invariant กันรัน local 2 ตัวซ้อน (M7-8)
         return LLM(model=f"ollama/{active_local_tag()}", base_url=OLLAMA_BASE_URL, **extra)
 
-    env_var = ENV_KEY_MAP[cfg.provider]
-    key = os.environ.get(env_var, "")
+    key = _resolve_cloud_key(cfg.provider, getattr(cfg, "account_id", "") or "",
+                             getattr(cfg, "key_id", "") or "")
     if not key:
         raise MissingAPIKeyError(
-            f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings (env: {env_var})"
+            f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings"
         )
 
     model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
-    prefix = {"claude": "anthropic", "gemini": "gemini", "openai": "openai"}[cfg.provider]
+    base = CLOUD_BASE_URL.get(cfg.provider)
+    if base:
+        # OpenAI-compatible endpoint (เช่น xAI/Grok) — CrewAI build นี้ไม่มี native "xai" และไม่ได้ลง
+        # litellm. ใช้ model ชื่อล้วน (ไม่ใส่ prefix) + base_url → CrewAI ยิงแบบ custom endpoint ได้
+        return LLM(model=model, api_key=key, base_url=base, **extra)
+    prefix = LLM_PREFIX[cfg.provider]
     return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
+
+
+def ollama_chat(
+    messages: list[dict],
+    *,
+    schema: dict | None = None,
+    temperature: float = 0.2,
+    timeout: int = 180,
+    stats: dict | None = None,
+    think: bool | None = None,
+) -> str:
+    """เรียก Ollama /api/chat ตรง ๆ พร้อมบังคับ output ตาม JSON schema (M11-1, §3.1)
+
+    ใช้กับ local tool-loop เท่านั้น — `format: <schema>` ของ Ollama 0.5+ การันตี output
+    เป็น JSON ที่ตรง schema 100% (qwen3 หลุด schema บ่อยถ้าบังคับผ่าน prompt อย่างเดียว).
+    บังคับ model = active_local_tag() เสมอ (เคารพกฎ 1-active-local M7-8 เหมือน get_llm).
+    cloud provider ไม่ผ่านทางนี้ — ยังใช้ CrewAI LLM (มี structured output ของตัวเอง).
+    cache (M11-4): temp <= CACHE_TEMP_MAX → ใช้ cache ตาม (model+messages+temp+schema+think).
+    stats (M11-5): ถ้าส่ง dict มา → สะสม tokens_in/tokens_out/llm_calls (cache hit = 0 token).
+    think (M11-8): True=/think (วางแผน), False=/no_think (เร็ว); None=ปล่อยตาม default ของ model.
+    """
+    import urllib.request
+    model = active_local_tag()
+    if stats is not None:
+        stats["model"] = model
+        stats["provider"] = "ollama"
+    use_cache = temperature <= CACHE_TEMP_MAX
+    key = _cache_key(model, messages, temperature, (schema, think)) if use_cache else ""
+    if key:
+        hit = _cache_get(key)
+        if hit is not None:
+            if stats is not None:
+                stats["cache_hits"] = stats.get("cache_hits", 0) + 1
+            return hit
+    body: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+    if schema is not None:
+        body["format"] = schema
+    if think is not None:
+        body["think"] = think   # qwen3: True=/think, False=/no_think (M11-8)
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    content = data.get("message", {}).get("content", "")
+    if stats is not None:
+        stats["tokens_in"] = stats.get("tokens_in", 0) + int(data.get("prompt_eval_count", 0) or 0)
+        stats["tokens_out"] = stats.get("tokens_out", 0) + int(data.get("eval_count", 0) or 0)
+        stats["llm_calls"] = stats.get("llm_calls", 0) + 1
+    if key and content:
+        _cache_put(key, content)
+    return content
+
+
+# M11-6 (§3.4) — context budget ต่อขนาด model (scale ตาม VRAM: เครื่องแรง = หน้าต่างกว้าง = AI ฉลาดกว่า)
+# keep_turns = จำนวน message ท้ายสุดที่เก็บเต็ม | obs_clip = ตัด observation ที่ส่งกลับ model
+# sys_budget_tok = เพดาน token ของ system prompt+schema (แค่เตือน ไม่ตัด เพราะ tool list ห้ามหาย)
+CONTEXT_PRESETS: dict[str, dict] = {
+    "qwen3:1.7b": {"keep_turns": 6,  "obs_clip": 2000,  "sys_budget_tok": 1500},
+    "qwen3:8b":   {"keep_turns": 8,  "obs_clip": 4000,  "sys_budget_tok": 2000},
+    "qwen3:14b":  {"keep_turns": 12, "obs_clip": 8000,  "sys_budget_tok": 3000},
+    "qwen3:32b":  {"keep_turns": 16, "obs_clip": 16000, "sys_budget_tok": 4000},
+}
+_CONTEXT_DEFAULT = {"keep_turns": 8,  "obs_clip": 4000,  "sys_budget_tok": 2000}
+_CONTEXT_CLOUD = {"keep_turns": 20, "obs_clip": 16000, "sys_budget_tok": 6000}
+
+
+def context_budget(provider: str = "ollama") -> dict:
+    """งบ context ต่อ hop (M11-6) — local อิงขนาด active model จริง, cloud ใช้ preset กว้าง
+
+    เครื่องที่ VRAM มาก → active model ใหญ่ → keep_turns/obs_clip มากขึ้นอัตโนมัติ
+    (model ที่ลงไม่ตรง preset เช่น gemma → ใช้ default ของ 8b เป็นค่ากลางปลอดภัย).
+    """
+    if provider != "ollama":
+        return dict(_CONTEXT_CLOUD)
+    return dict(CONTEXT_PRESETS.get(active_local_tag(), _CONTEXT_DEFAULT))
 
 
 class VRAMDetector:
