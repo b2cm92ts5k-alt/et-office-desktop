@@ -62,31 +62,68 @@ def cache_clear() -> None:
     with _cache_lock:
         _cache.clear()
 
-ENV_KEY_MAP = {
-    "claude": "ANTHROPIC_API_KEY",
-    "gemini": "GOOGLE_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "grok": "XAI_API_KEY",        # M14-2 — xAI (console.x.ai)
-    "deepseek": "DEEPSEEK_API_KEY",  # M14-2 — DeepSeek (platform.deepseek.com)
+# ─────────────────────────────────────────────────────────────────────────────
+# M16-1 — Provider Registry: ทุกอย่างของ 1 cloud provider อยู่ที่เดียว (ยุบ 5 dict เดิม:
+# ENV_KEY_MAP / DEFAULT_CLOUD_MODELS / LLM_PREFIX / CLOUD_BASE_URL / _VALIDATE_EP).
+# เพิ่ม provider ใหม่ = เพิ่ม 1 entry ที่นี่ที่เดียว (เดิมต้องแก้ 5 ที่กระจาย ลืมง่าย).
+#
+# fields:
+#   label         ชื่อโชว์ UI
+#   env_key       ชื่อ ENV ที่เก็บ key default (.env)
+#   default_model model ที่ใช้เมื่อ agent ไม่ระบุ
+#   route         วิธียิงผ่าน CrewAI LLM:
+#                   {"kind":"litellm","prefix":"anthropic"}  → LLM("anthropic/<model>")
+#                   {"kind":"openai_compat","base_url":...}  → LLM("<model>", base_url=...) (OpenAI-compatible)
+#                   openai_compat ใส่ "extra_headers" เพิ่มได้ (เช่น OpenRouter ต้องการ HTTP-Referer)
+#   list          endpoint ดึงรายชื่อ model จริงของ key:
+#                   {"url": "...{k}...", "headers": lambda k: {...}}  (M16-2 จะเพิ่ม "parse" ต่อ provider)
+PROVIDERS: dict[str, dict] = {
+    "claude": {
+        "label": "Claude (Anthropic)",
+        "env_key": "ANTHROPIC_API_KEY",
+        "default_model": "claude-sonnet-4-6",
+        "route": {"kind": "litellm", "prefix": "anthropic"},
+        "list": {"url": "https://api.anthropic.com/v1/models",
+                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "env_key": "GOOGLE_API_KEY",
+        "default_model": "gemini-2.5-flash",
+        "route": {"kind": "litellm", "prefix": "gemini"},
+        "list": {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
+                 "headers": lambda k: {}},
+    },
+    "openai": {
+        "label": "OpenAI",
+        "env_key": "OPENAI_API_KEY",
+        "default_model": "gpt-4o",
+        "route": {"kind": "litellm", "prefix": "openai"},
+        "list": {"url": "https://api.openai.com/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    "grok": {  # xAI (console.x.ai) — ไม่มี native provider "xai" ใน litellm → openai-compatible
+        "label": "Grok (xAI)",
+        "env_key": "XAI_API_KEY",
+        "default_model": "grok-4.1-fast",   # ตัวถูก+เร็ว เป็น default ปลอดภัย
+        "route": {"kind": "openai_compat", "base_url": "https://api.x.ai/v1"},
+        "list": {"url": "https://api.x.ai/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    "deepseek": {  # platform.deepseek.com — native provider ของ litellm
+        "label": "DeepSeek",
+        "env_key": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-v4-flash",
+        "route": {"kind": "litellm", "prefix": "deepseek"},
+        "list": {"url": "https://api.deepseek.com/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
 }
 
-DEFAULT_CLOUD_MODELS = {
-    "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.5-flash",
-    "openai": "gpt-4o",
-    "grok": "grok-4.1-fast",       # ตัวถูก+เร็ว เป็น default ปลอดภัย
-    "deepseek": "deepseek-v4-flash",
-}
-
-# M14-2 — LiteLLM provider prefix ต่อ provider (CrewAI LLM ส่งต่อ litellm).
-# deepseek เป็น native provider ของ litellm → "deepseek/" ตรง ๆ.
-LLM_PREFIX = {"claude": "anthropic", "gemini": "gemini", "openai": "openai",
-              "deepseek": "deepseek"}
-
-# M14-2 — provider ที่ litellm ไม่มี native แต่ endpoint เป็น OpenAI-compatible → route ผ่าน
-# "openai/<model>" + base_url. Grok (xAI) ไม่มี native provider "xai" ใน CrewAI build นี้
-# (และไม่ได้ลง litellm fallback) จึงต้องยิงแบบ openai-compatible ที่ api.x.ai/v1.
-CLOUD_BASE_URL = {"grok": "https://api.x.ai/v1"}
+# derived views — คงชื่อเดิมไว้ให้โค้ดที่ import อยู่ (accounts/models/settings routes) ไม่พัง
+# (single source of truth = PROVIDERS; ลำดับ provider คงเดิมตาม insertion order ของ dict)
+ENV_KEY_MAP = {p: s["env_key"] for p, s in PROVIDERS.items()}
+DEFAULT_CLOUD_MODELS = {p: s["default_model"] for p, s in PROVIDERS.items()}
 
 
 class MissingAPIKeyError(Exception):
@@ -156,31 +193,17 @@ def cloud_models(provider: str) -> list[dict]:
     return CLOUD_CATALOG.get(provider, [])
 
 
-# M14-5 — endpoint สำหรับ validate API key (ping ดูว่า key ใช้ได้ + ดึงรายชื่อ model จริง)
-# header ต่อ provider ต่างกัน: claude=x-api-key, openai/grok/deepseek=Bearer, gemini=?key=
-_VALIDATE_EP: dict[str, dict] = {
-    "claude":   {"url": "https://api.anthropic.com/v1/models",
-                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
-    "openai":   {"url": "https://api.openai.com/v1/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "grok":     {"url": "https://api.x.ai/v1/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "deepseek": {"url": "https://api.deepseek.com/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "gemini":   {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
-                 "headers": lambda k: {}},
-}
-
-
 def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
-    """ping provider ด้วย key → {ok, models?, error?} (M14-5)
+    """ping provider ด้วย key → {ok, models?, error?} (M14-5, ใช้ registry M16-1)
 
-    เรียก endpoint list-models ที่ราคาถูก/ฟรี — 200 = key ใช้ได้ + ดึง id model จริงมาด้วย
-    (เก็บเป็น allowed_models ของ account). 401/403 = key ผิด. ไม่ log/ไม่คาย key.
+    เรียก endpoint list-models (`PROVIDERS[provider]["list"]`) ที่ราคาถูก/ฟรี — 200 = key
+    ใช้ได้ + ดึง id model จริงมาด้วย (M16-3 จะ persist เป็น cache ของ account).
+    401/403 = key ผิด. ไม่ log/ไม่คาย key.
     """
     import urllib.error
     import urllib.request
-    ep = _VALIDATE_EP.get(provider)
+    spec = PROVIDERS.get(provider)
+    ep = spec.get("list") if spec else None
     if not ep:
         return {"ok": False, "error": f"provider {provider} ไม่รองรับ validate"}
     url = ep["url"].format(k=key)
@@ -279,14 +302,20 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
             f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings"
         )
 
-    model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
-    base = CLOUD_BASE_URL.get(cfg.provider)
-    if base:
-        # OpenAI-compatible endpoint (เช่น xAI/Grok) — CrewAI build นี้ไม่มี native "xai" และไม่ได้ลง
-        # litellm. ใช้ model ชื่อล้วน (ไม่ใส่ prefix) + base_url → CrewAI ยิงแบบ custom endpoint ได้
-        return LLM(model=model, api_key=key, base_url=base, **extra)
-    prefix = LLM_PREFIX[cfg.provider]
-    return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
+    spec = PROVIDERS.get(cfg.provider)
+    if spec is None:
+        raise MissingAPIKeyError(f"ไม่รู้จัก provider {cfg.provider}")
+    model = cfg.model or spec["default_model"]
+    route = spec["route"]
+    if route["kind"] == "openai_compat":
+        # OpenAI-compatible endpoint (Grok/OpenRouter/GitHub Models) — model ชื่อล้วน + base_url.
+        # บาง provider ต้องการ header เพิ่ม (เช่น OpenRouter: HTTP-Referer/X-Title) → extra_headers
+        kw: dict = {"base_url": route["base_url"]}
+        headers = route.get("extra_headers")
+        if headers:
+            kw["extra_headers"] = headers
+        return LLM(model=model, api_key=key, **kw, **extra)
+    return LLM(model=f'{route["prefix"]}/{model}', api_key=key, **extra)
 
 
 def ollama_chat(
