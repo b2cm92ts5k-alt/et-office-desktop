@@ -74,6 +74,26 @@ class SkillStore:
     def all(self) -> list[dict]:
         return self._skills
 
+    def public_list(self) -> list[dict]:
+        """รายการ skill สำหรับ UI (M15-3) — มี enabled + builtin (preset แก้ไม่ได้)"""
+        disabled = self._disabled()
+        builtin = {f.stem for f in SKILLS_DIR.glob("*.md")} if SKILLS_DIR.exists() else set()
+        return [{"name": s["name"], "description": s["description"], "when": s["when"],
+                 "tools": s["tools"], "body": s["body"],
+                 "enabled": s["name"] not in disabled,
+                 "builtin": Path(s["file"]).stem in builtin} for s in self._skills]
+
+    def set_enabled(self, name: str, enabled: bool) -> bool:
+        """เปิด/ปิด skill (M15-3) — เก็บใน settings disabled_skills"""
+        from .settings_store import settings_store
+        disabled = set(settings_store.get("disabled_skills") or [])
+        if enabled:
+            disabled.discard(name)
+        else:
+            disabled.add(name)
+        settings_store.update({"disabled_skills": sorted(disabled)})
+        return name not in disabled
+
     def _disabled(self) -> set[str]:
         from .settings_store import settings_store
         return set(settings_store.get("disabled_skills") or [])

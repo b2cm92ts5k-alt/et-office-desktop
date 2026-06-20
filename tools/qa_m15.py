@@ -50,6 +50,24 @@ def main() -> None:
     src = inspect.getsource(TaskRouter._run_tool_loop)
     check("inject skill ใน _run_tool_loop", "skill_service.context_block" in src)
 
+    print("--- M15-3 Skills UI/route ---")
+    from daemon.services.settings_store import settings_store
+    settings_store.update({"disabled_skills": []})
+    pub = S.public_list()
+    check("public_list มี enabled/builtin/body", all({"enabled", "builtin", "body"} <= set(p) for p in pub))
+    check("skill ทั้งหมด builtin (preset)", all(p["builtin"] for p in pub))
+    S.set_enabled("build-feature", False)
+    check("set_enabled ปิด → persist ใน settings", "build-feature" in (settings_store.get("disabled_skills") or []))
+    check("skill ที่ปิด ถูกข้ามใน match", "build-feature" not in [s["name"] for s in S.match("เขียนโค้ด")])
+    S.set_enabled("build-feature", True)
+    check("set_enabled เปิดคืน", "build-feature" not in (settings_store.get("disabled_skills") or []))
+    from fastapi.testclient import TestClient
+    from daemon.main import app
+    _c = TestClient(app)
+    check("GET /skills 200 + 5 skill", _c.get("/skills").status_code == 200 and len(_c.get("/skills").json()["skills"]) == 5)
+    check("PUT /skills/{name} toggle", _c.put("/skills/write-plan", json={"enabled": False}).json()["enabled"] is False)
+    _c.put("/skills/write-plan", json={"enabled": True})
+
     print("--- M15-4 web_search tool ---")
     from daemon.services import tool_executor as TE
     check("web_search ใน TOOLS_SPEC", "web_search" in TE.TOOLS_SPEC)

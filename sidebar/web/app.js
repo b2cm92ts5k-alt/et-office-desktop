@@ -415,6 +415,7 @@ async function loadSettings() {
     document.getElementById("vram-info").textContent =
       `VRAM: ${vram.vram_gb} GB → แนะนำ ${vram.recommended}`;
     await loadKeys();   // M11-14 — โหลด key list (default .env + store)
+    await loadSkills(); // M15-3 — โหลด skill list (เปิด/ปิด)
     renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
@@ -793,6 +794,40 @@ async function saveKey() {
   } else {
     feedLine("error", `เพิ่ม key ไม่สำเร็จ: ${d.detail || res.status}`);
   }
+}
+
+/* ---------- Skills (M15-3) — สูตรทำงานของทีม ---------- */
+let _skills = [];
+async function loadSkills() {
+  try { _skills = (await (await fetch(BASE + "/skills")).json()).skills || []; }
+  catch { _skills = []; }
+  const box = document.getElementById("skills-list");
+  if (!box) return;
+  box.innerHTML = _skills.length
+    ? _skills.map((s, i) =>
+        `<div class="key-item"><label class="inline" title="${esc(s.description)}">`
+        + `<input type="checkbox"${s.enabled ? " checked" : ""} onchange="toggleSkill('${esc(s.name)}', this.checked)"> `
+        + `<b>${esc(s.name)}</b></label> `
+        + `<span class="dim sm">${esc(s.description)}</span> `
+        + `<button class="ghost sm" onclick="viewSkill(${i})">ดู</button></div>`).join("")
+    : `<div class="dim">ยังไม่มี skill</div>`;
+}
+
+async function toggleSkill(name, enabled) {
+  try {
+    await fetch(BASE + "/skills/" + encodeURIComponent(name), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    feedLine("ln", `${enabled ? "เปิด" : "ปิด"} skill: ${name}`);
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
+}
+
+function viewSkill(i) {
+  const s = _skills[i];
+  if (!s) return;
+  feedLine("ln", `📋 ${s.name} — tools: ${(s.tools || []).join(", ") || "ทั่วไป"}`);
+  for (const line of String(s.body || "").split("\n")) if (line.trim()) feedLine("dim", line);
 }
 
 /* ---------- github (M9-3) ---------- */

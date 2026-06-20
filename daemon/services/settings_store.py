@@ -25,6 +25,7 @@ DEFAULTS: dict = {
     "cost_guard_enabled": True,      # M11-10 — เปิด guard ค่า cloud
     "cost_daily_usd": 5.0,           # M11-10 — เพดานต่อวัน (USD); 0 = ไม่จำกัด
     "cost_hourly_usd": 0.0,          # M11-10 — เพดานต่อชั่วโมง (USD); 0 = ไม่จำกัด
+    "disabled_skills": [],           # M15-3 — ชื่อ skill ที่ปิด (ไม่ inject); ว่าง = เปิดทุกตัว
 }
 
 
