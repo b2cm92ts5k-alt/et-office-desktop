@@ -323,8 +323,20 @@ def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
 
 
 def cloud_price(provider: str, model: str) -> tuple[float, float] | None:
-    """ราคา (in, out) USD/1M token ของ model จาก catalog — None ถ้าไม่อยู่ใน catalog (M11-13)"""
-    for m in CLOUD_CATALOG.get(provider, []):
+    """ราคา (in, out) USD/1M token ของ model (M11-13, ขยาย M16-5)
+
+    ลำดับ: (1) account cache ที่มีราคาจริงต่อ key (เช่น OpenRouter ส่ง pricing มาด้วย)
+    → (2) CLOUD_CATALOG (curated, hand-verified) → None (cost_guard เหมา per-provider ต่อ)
+    """
+    try:  # 1) ราคาจริงจาก list-endpoint ที่ cache ไว้บน account (model dynamic ที่ไม่อยู่ catalog)
+        from ..services.account_store import account_store
+        for acc in account_store.accounts_for(provider):
+            for mi in acc.get("models") or []:
+                if mi.get("id") == model and mi.get("price_in") is not None:
+                    return (float(mi["price_in"]), float(mi.get("price_out") or 0.0))
+    except Exception:  # noqa: BLE001 — pricing ห้ามทำ cost_guard ล้ม
+        pass
+    for m in CLOUD_CATALOG.get(provider, []):  # 2) catalog
         if m["model"] == model:
             return (float(m["in"]), float(m["out"]))
     return None
