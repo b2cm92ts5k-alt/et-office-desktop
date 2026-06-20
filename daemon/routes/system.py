@@ -21,6 +21,17 @@ def tools() -> dict:
     return {"tools": [{"name": n, "desc": s["desc"]} for n, s in TOOLS_SPEC.items()]}
 
 
+@router.get("/tools/presets")
+def tool_presets(role: str = "", keywords: str = "") -> dict:
+    """M18 — preset tool ต่อ role: คืนทั้งหมด + ตัวที่ match กับ role/keywords (UI เอาไปติ๊กให้)"""
+    import re
+
+    from ..services.tool_executor import ROLE_TOOL_PRESETS, preset_for_role
+    kws = [k for k in re.split(r"[,\s]+", keywords) if k] if keywords else []
+    match = preset_for_role(role, kws) if (role or kws) else None
+    return {"presets": ROLE_TOOL_PRESETS, "match": match}
+
+
 @router.post("/system/shutdown")
 def shutdown() -> dict:
     """M12-2 — ปิด daemon นุ่มนวล (sidebar/terminal เรียก) → launcher watch เก็บกวาด godot+sidebar ต่อ

@@ -60,10 +60,38 @@ ROLE_TOOL_PRESETS: dict[str, list[str]] = {
                    "git_status", "git_diff", "git_commit", "git_push"],
     "designer":   ["read_file", "write_file", "list_dir", "mkdir"],
     "artist":     ["generate_image", "read_file", "write_file", "list_dir", "mkdir"],  # M17 — ET Artist
+    "sound":      ["read_file", "write_file", "list_dir", "mkdir"],              # M18 — sound designer (สเปคเสียง)
+    "tester":     ["read_file", "list_dir", "web_search", "git_status", "git_diff"],  # M18 — QA
+    "writer":     ["read_file", "write_file", "list_dir", "web_search", "fetch_url"],  # M18 — narrative/docs
     "researcher": ["read_file", "write_file", "list_dir", "web_search", "fetch_url"],
     "producer":   ["read_file", "list_dir",
                    "gh_list_issues", "gh_create_issue", "gh_comment_issue", "gh_close_issue"],
 }
+
+# M18 — จับ role free-text (ไทย/อังกฤษ) → preset key ด้วย keyword (pattern เดียวกับ specialist_for)
+# ลำดับสำคัญ: sound/tester/writer มาก่อน "designer" → "Sound Designer"→sound, "Game Designer"→designer
+_PRESET_MATCH: list[tuple[list[str], str]] = [
+    (["producer", "manager", "เลขา", "วางแผน", "ผู้จัด", "orchestrat", "pm", "secretary"], "producer"),
+    (["coder", "program", "developer", "dev", "engineer", "โปรแกรม", "เขียนโค้ด", "วิศวกร", "backend", "frontend"], "coder"),
+    (["artist", "วาด", "ภาพ", "image", "art", "กราฟิก", "illustrat", "concept", "pixel"], "artist"),
+    (["sound", "เสียง", "audio", "music", "ดนตรี", "sfx", "composer", "foley"], "sound"),
+    (["test", "qa", "ทดสอบ", "คุณภาพ", "bug", "quality"], "tester"),
+    (["writ", "narrative", "เนื้อเรื่อง", "เขียนเรื่อง", "story", "script", "นักเขียน", "lore", "dialogue"], "writer"),
+    (["research", "วิจัย", "ค้นคว้า", "หาข้อมูล", "วิเคราะห์", "analyst", "analysis"], "researcher"),
+    (["design", "ออกแบบ", "ui", "ux", "ดีไซน์", "level", "layout"], "designer"),
+]
+
+
+def preset_for_role(role: str = "", keywords: list[str] | None = None) -> dict | None:
+    """M18 — หา tool preset ที่ตรง role → {preset, tools} หรือ None ถ้าไม่ match อะไร
+
+    match จาก role + keywords (ไม่สน case). ใช้ทั้ง UI ปุ่ม "ใช้ tool ตาม role" และ HIRE auto-apply.
+    """
+    hay = (role + " " + " ".join(keywords or [])).lower()
+    for kws, key in _PRESET_MATCH:
+        if any(kw in hay for kw in kws):
+            return {"preset": key, "tools": list(ROLE_TOOL_PRESETS[key])}
+    return None
 
 
 def tool_allowed(tool: str, allowed_tools: list[str] | None) -> bool:
