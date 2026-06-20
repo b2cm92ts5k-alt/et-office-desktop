@@ -341,6 +341,11 @@ class TaskRouter:
             system += ("\n\n‼️ รอบแก้ตัว: ตอบ JSON ตามรูปแบบเป๊ะ ๆ เท่านั้น | "
                        "เลือก tool จากรายการข้างบนเท่านั้น | ใส่ args ให้ครบทุกตัว | "
                        "ทำ action ทีละขั้นจนเสร็จแล้วค่อยตอบ final")
+        # M15-1: skill ที่ตรงกับงาน (สูตรทำงานทีละขั้น) → inject ให้ sub-agent ทำตาม
+        from .skill_service import skill_service
+        skill_block = skill_service.context_block(task.message, agent_cfg.role)
+        if skill_block:
+            system += "\n\n" + skill_block
         mem = memory_service.context_block(agent_cfg.id)  # M11-11 — team + per-agent memory
         if mem:
             system += "\n\n" + mem
