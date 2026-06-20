@@ -97,6 +97,9 @@ _BACKENDS = {"gemini": _gemini, "openai": _openai, "openrouter": _openrouter}
 # provider ที่สร้างภาพได้ใน v1 (UI/picker ใช้กรอง) — openrouter เป็น stub ไว้ก่อน
 IMAGE_PROVIDERS = {"gemini", "openai"}
 
+# default model ต่อ provider เมื่อ agent ไม่ได้เลือก (gemini = ฟรี Nano Banana ตามมติ CEO)
+DEFAULT_IMAGE_MODEL = {"gemini": "gemini-2.5-flash-image", "openai": "gpt-image-1"}
+
 
 def supported(provider: str) -> bool:
     return provider in IMAGE_PROVIDERS

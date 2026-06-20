@@ -463,7 +463,7 @@ class TaskRouter:
                     task.task_id, agent_cfg.id, agent_cfg.name, tool, summary, detail)
                 if approved:
                     try:
-                        observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args)
+                        observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args, agent_cfg)
                         actions_done += 1
                         tool_fail_streak = 0  # สำเร็จ → รีเซ็ต streak
                     except WorkspaceError as exc:

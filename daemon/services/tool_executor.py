@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -35,6 +37,9 @@ TOOLS_SPEC = {
     "powershell": {"args": ["command"],         "desc": "รันคำสั่ง PowerShell ใน workspace"},
     "web_search": {"args": ["query"],           "desc": "ค้นเว็บ คืน title+url+สรุปสั้น (เอา url ไป fetch_url ต่อ)"},
     "fetch_url":  {"args": ["url"],             "desc": "ดึงเนื้อหาจากเว็บ (GET, text เท่านั้น)"},
+    # M17 — สร้างภาพ (ET Artist). model เลือกที่ gear (image_model); prompt อังกฤษได้ผลดีสุด
+    "generate_image": {"args": ["prompt", "filename"],
+                       "desc": "สร้างรูปจากคำอธิบาย (prompt) → เซฟ PNG ใน workspace/artwork/ (ใส่ n=1-4, aspect=1:1/16:9/9:16 ได้)"},
     # GitHub (M9-4) — ต้องเชื่อม token + ตั้ง repo ใน Settings ก่อน, ทุก action ผ่าน permission gate
     "gh_list_issues":   {"args": ["state"],            "desc": "ดู issue/Task ใน GitHub repo (state: open/closed/all)"},
     "gh_create_issue":  {"args": ["title", "body"],    "desc": "สร้าง issue/Task ใหม่ใน GitHub repo"},
@@ -210,8 +215,88 @@ def _web_search(query: str, n: int = 6) -> str:
                      for i, it in enumerate(items))
 
 
-def execute(tool: str, args: dict) -> str:
-    """รัน tool หนึ่งครั้ง — เรียกหลังผ่าน permission gate แล้วเท่านั้น"""
+# ── M17 image generation helpers ─────────────────────────────────────────────
+def _img_ts() -> str:
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _img_slug(text: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9ก-๙]+", "-", str(text or "").strip())[:40].strip("-").lower()
+    return s or "image"
+
+
+def image_target(agent) -> tuple[str, str, str] | None:
+    """หา (provider, model, account_id) ของ tool generate_image (M17-3)
+
+    agent ตั้ง image_model มา → ใช้ตามนั้น; ไม่งั้น default = provider ฟรีก่อน (gemini Nano Banana)
+    แล้ว openai. ไม่มี credential ที่สร้างภาพได้เลย → None (tool คืนข้อความแนะนำ)
+    """
+    from ..adapters.image_adapter import DEFAULT_IMAGE_MODEL, IMAGE_PROVIDERS
+    im = getattr(agent, "image_model", None) if agent is not None else None
+    prov = getattr(im, "provider", "") if im is not None else ""
+    if prov in IMAGE_PROVIDERS:
+        model = getattr(im, "model", "") or DEFAULT_IMAGE_MODEL.get(prov, "")
+        return (prov, model, getattr(im, "account_id", "") or "")
+    from ..adapters.llm_adapter import available_cloud_providers
+    avail = available_cloud_providers()
+    for p in ("gemini", "openai"):   # ฟรีก่อน
+        if p in IMAGE_PROVIDERS and avail.get(p):
+            return (p, DEFAULT_IMAGE_MODEL[p], "")
+    return None
+
+
+def _emit_image(agent, paths: list[str], prompt: str, model: str) -> None:
+    """ยิง WS event image.generated (M17-7) — โชว์ sidebar/Godot; พังก็ไม่ล้ม tool"""
+    try:
+        from .ws_manager import ws_manager
+        ws_manager.emit({"type": "image.generated", "data": {
+            "agent_id": getattr(agent, "id", "") if agent is not None else "",
+            "paths": paths, "prompt": prompt[:120], "model": model}})
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _generate_image(args: dict, root: Path, agent) -> str:
+    from ..adapters import image_adapter
+    from ..adapters.llm_adapter import _resolve_cloud_key
+    target = image_target(agent)
+    if not target:
+        return "ยังไม่มี key ที่สร้างภาพได้ — เพิ่ม Gemini key (ฟรี) ที่ Settings → API Keys"
+    provider, model, account_id = target
+    key = _resolve_cloud_key(provider, account_id, "")
+    if not key:
+        return f"ยังไม่มี key ของ {provider} ที่ใช้สร้างภาพ — เพิ่มที่ Settings"
+    prompt = str(args.get("prompt", "")).strip()
+    if not prompt:
+        return "ต้องมี prompt (คำอธิบายรูป — ภาษาอังกฤษได้ผลดีสุด)"
+    try:
+        n = int(args.get("n", 1) or 1)
+    except (TypeError, ValueError):
+        n = 1
+    try:
+        imgs = image_adapter.generate(provider, model, key, prompt,
+                                      n=n, aspect=str(args.get("aspect", "1:1")))
+    except image_adapter.ImageError as exc:
+        return f"สร้างรูปไม่สำเร็จ: {exc}"
+    art = _resolve("artwork", root)
+    art.mkdir(parents=True, exist_ok=True)
+    base = _img_slug(args.get("filename") or prompt)
+    saved: list[str] = []
+    stamp = _img_ts()
+    for i, raw in enumerate(imgs):
+        suffix = "" if len(imgs) == 1 else f"_{i + 1}"
+        rel = f"artwork/{stamp}_{base}{suffix}.png"
+        _resolve(rel, root).write_bytes(raw)
+        saved.append(rel)
+    _emit_image(agent, saved, prompt, f"{provider}/{model}")
+    return f"สร้างรูปแล้ว {len(saved)} ไฟล์ (model: {provider}/{model}): " + ", ".join(saved)
+
+
+def execute(tool: str, args: dict, agent=None) -> str:
+    """รัน tool หนึ่งครั้ง — เรียกหลังผ่าน permission gate แล้วเท่านั้น
+
+    agent (M17): AgentConfig ของผู้เรียก — generate_image ใช้หา image_model; tool อื่นไม่ใช้
+    """
     if tool.startswith("gh_"):
         return _execute_github(tool, args)   # GitHub ไม่ผูกกับ workspace
     root = workspace_root()
@@ -273,6 +358,9 @@ def execute(tool: str, args: dict) -> str:
             err = r.stderr.decode("utf-8", errors="replace")
             return _clip(f"exit={r.returncode}\n{out}" + (f"\nSTDERR:\n{err}" if err.strip() else ""))
 
+        if tool == "generate_image":
+            return _generate_image(args, root, agent)
+
         if tool == "web_search":
             return _web_search(str(args.get("query", "")))
 
@@ -322,6 +410,8 @@ def summarize(tool: str, args: dict) -> str:
         return f"ย้าย {args.get('src')} → {args.get('dst')}"
     if tool == "fetch_url":
         return f"เปิดเว็บ {args.get('url')}"
+    if tool == "generate_image":
+        return f"สร้างรูป: {str(args.get('prompt', ''))[:120]}"
     if tool == "gh_create_issue":
         return f"สร้าง GitHub issue: {args.get('title')}"
     if tool == "gh_comment_issue":

@@ -25,6 +25,8 @@ async def lifespan(app: FastAPI):
     init_db()
     import asyncio
     permission_gate.attach_loop(asyncio.get_running_loop())  # broadcast จาก task thread (M6-8)
+    from .services.ws_manager import ws_manager
+    ws_manager.main_loop = asyncio.get_running_loop()  # ให้ tool-loop (sync) emit event ได้ (M17)
     social_service.start()  # idle social loop (M3-9)
     yield
     social_service.stop()

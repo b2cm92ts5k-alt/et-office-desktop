@@ -21,6 +21,7 @@ class WSManager:
     def __init__(self) -> None:
         self._clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        self.main_loop: asyncio.AbstractEventLoop | None = None  # set ตอน startup (M17) — ให้ thread emit ได้
         JOURNAL_PATH.parent.mkdir(exist_ok=True)
 
     async def connect(self, ws: WebSocket) -> None:
@@ -63,6 +64,12 @@ class WSManager:
     def broadcast_threadsafe(self, loop: asyncio.AbstractEventLoop, event: dict[str, Any]) -> None:
         """เรียกจาก worker thread (เช่น CrewAI kickoff) — ส่งเข้า event loop หลัก"""
         asyncio.run_coroutine_threadsafe(self.broadcast(event), loop)
+
+    def emit(self, event: dict[str, Any]) -> None:
+        """broadcast จาก thread ไหนก็ได้โดยใช้ main_loop ที่เก็บไว้ (M17 — tool-loop sync emit)
+        ไม่มี loop (เช่น เทสนอกแอป) → เงียบ (ไม่ throw)"""
+        if self.main_loop is not None:
+            asyncio.run_coroutine_threadsafe(self.broadcast(event), self.main_loop)
 
     @property
     def client_count(self) -> int:
