@@ -15,3 +15,5 @@ websockets==16.0
 # หมายเหตุ: chroma-hnswlib (transitive dep ของ crewai) ไม่มี source build บน Windows
 # ถ้า pip พยายาม build จาก source ให้ติดตั้งด้วย: pip install --prefer-binary -r requirements.txt
 pywebview==6.2.1   # sidebar host (M4-1)
+pywin32==312       # DPAPI เข้ารหัส API key/บัญชี at rest (M14 — win32crypt)
+anthropic==0.73.0  # cloud Claude ผ่าน CrewAI native provider (M14); ไม่ลง = ใช้ได้แค่ local/gemini/openai/grok/deepseek
