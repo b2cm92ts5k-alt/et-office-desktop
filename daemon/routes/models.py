@@ -69,7 +69,10 @@ def catalog() -> dict:
 
 
 @router.get("/available")
-def available(show_all: bool = Query(False, alias="all")) -> dict:
+def available(show_all: bool = Query(False, alias="all"), kind: str = Query("")) -> dict:
+    # M17-4 — picker ของ tool generate_image: คืนเฉพาะ image model ที่ key เปิด (provider ที่สร้างภาพได้)
+    if kind == "image":
+        return {"options": _image_model_opts()}
     """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): local ตัวเดียว (active) + cloud ที่มี key
     ใช้ร่วมกันทั้ง HIRE dialog, gear ของ agent, และ CEO onboarding (M8)
 
@@ -122,6 +125,41 @@ def _price_tag(prov: str, c: dict | None, mi: dict | None) -> str:
     if prov in _FREE_TIER_PROVIDERS:   # ไม่รู้ราคาต่อ model แต่ provider มี free tier
         return "🟢 ฟรี* · โควต้าตามรุ่น"
     return "💰 จ่ายตามใช้ · ดูราคาที่ผู้ให้บริการ"
+
+
+def _image_model_opts() -> list[dict]:
+    """ตัวเลือก image model สำหรับ tool generate_image (M17-4) — image-kind จาก account cache
+
+    เฉพาะ provider ที่สร้างภาพได้ (image_adapter.IMAGE_PROVIDERS). ถ้า key มี credential แต่ cache
+    ยังไม่มี image-kind (เช่นยังไม่ refresh หลังอัปคลาส) → เสนอ default ตัวฟรีกันลิสต์โล่ง.
+    """
+    from ..adapters.image_adapter import DEFAULT_IMAGE_MODEL, IMAGE_PROVIDERS
+    from ..services.account_store import account_store
+
+    has_cred = {a["provider"] for a in account_store.all_public()}
+    has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
+    out: list[dict] = []
+    for prov in ENV_KEY_MAP:
+        if prov not in IMAGE_PROVIDERS or prov not in has_cred:
+            continue
+        seen: dict[str, dict] = {}
+        for acc in account_store.accounts_for(prov):
+            for mi in acc.get("models") or []:
+                mid = mi.get("id")
+                if mi.get("kind") == "image" and mid and mid not in seen:
+                    seen[mid] = mi
+        if seen:
+            for mid, mi in seen.items():
+                out.append({"provider": prov, "model": mid, "account_id": "", "kind": "image",
+                            "label": f"{mi.get('label') or mid} · {_price_tag(prov, None, mi)}",
+                            "recommended": False, "selectable": True})
+        else:  # fallback — มี key แต่ยังไม่เห็น image-kind (เสนอ default ตัวฟรี/หลัก)
+            dm = DEFAULT_IMAGE_MODEL.get(prov)
+            if dm:
+                out.append({"provider": prov, "model": dm, "account_id": "", "kind": "image",
+                            "label": f"{dm} · {_price_tag(prov, None, None)}",
+                            "recommended": False, "selectable": True})
+    return out
 
 
 def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
