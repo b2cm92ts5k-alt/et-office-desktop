@@ -62,31 +62,252 @@ def cache_clear() -> None:
     with _cache_lock:
         _cache.clear()
 
-ENV_KEY_MAP = {
-    "claude": "ANTHROPIC_API_KEY",
-    "gemini": "GOOGLE_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "grok": "XAI_API_KEY",        # M14-2 — xAI (console.x.ai)
-    "deepseek": "DEEPSEEK_API_KEY",  # M14-2 — DeepSeek (platform.deepseek.com)
+# ─────────────────────────────────────────────────────────────────────────────
+# M16-1 — Provider Registry: ทุกอย่างของ 1 cloud provider อยู่ที่เดียว (ยุบ 5 dict เดิม:
+# ENV_KEY_MAP / DEFAULT_CLOUD_MODELS / LLM_PREFIX / CLOUD_BASE_URL / _VALIDATE_EP).
+# เพิ่ม provider ใหม่ = เพิ่ม 1 entry ที่นี่ที่เดียว (เดิมต้องแก้ 5 ที่กระจาย ลืมง่าย).
+#
+# fields:
+#   label         ชื่อโชว์ UI
+#   env_key       ชื่อ ENV ที่เก็บ key default (.env)
+#   default_model model ที่ใช้เมื่อ agent ไม่ระบุ
+#   route         วิธียิงผ่าน CrewAI LLM:
+#                   {"kind":"litellm","prefix":"anthropic"}  → LLM("anthropic/<model>")
+#                   {"kind":"openai_compat","base_url":...}  → LLM("<model>", base_url=...) (OpenAI-compatible)
+#                   openai_compat ใส่ "extra_headers" เพิ่มได้ (เช่น OpenRouter ต้องการ HTTP-Referer)
+#   list          endpoint ดึงรายชื่อ model จริงของ key:
+#                   {"url": "...{k}...", "headers": lambda k: {...}}  (M16-2 จะเพิ่ม "parse" ต่อ provider)
+PROVIDERS: dict[str, dict] = {
+    "claude": {
+        "label": "Claude (Anthropic)",
+        "env_key": "ANTHROPIC_API_KEY",
+        "default_model": "claude-sonnet-4-6",
+        "route": {"kind": "litellm", "prefix": "anthropic"},
+        "list": {"url": "https://api.anthropic.com/v1/models",
+                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "env_key": "GOOGLE_API_KEY",
+        "default_model": "gemini-2.5-flash",
+        "route": {"kind": "litellm", "prefix": "gemini"},
+        "list": {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
+                 "headers": lambda k: {}},
+    },
+    "openai": {
+        "label": "OpenAI",
+        "env_key": "OPENAI_API_KEY",
+        "default_model": "gpt-4o",
+        "route": {"kind": "litellm", "prefix": "openai"},
+        "list": {"url": "https://api.openai.com/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    "grok": {  # xAI (console.x.ai) — ไม่มี native provider "xai" ใน litellm → openai-compatible
+        "label": "Grok (xAI)",
+        "env_key": "XAI_API_KEY",
+        "default_model": "grok-4.1-fast",   # ตัวถูก+เร็ว เป็น default ปลอดภัย
+        "route": {"kind": "openai_compat", "base_url": "https://api.x.ai/v1"},
+        "list": {"url": "https://api.x.ai/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    "deepseek": {  # platform.deepseek.com — native provider ของ litellm
+        "label": "DeepSeek",
+        "env_key": "DEEPSEEK_API_KEY",
+        "default_model": "deepseek-v4-flash",
+        "route": {"kind": "litellm", "prefix": "deepseek"},
+        "list": {"url": "https://api.deepseek.com/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    # M16-6 — aggregator ข้ามค่าย. crewai build นี้รู้จัก "openrouter" เป็น native provider →
+    # ใช้ litellm prefix "openrouter/" ได้เลย (มันเก็บ vendor sub-path ของ model ครบ เช่น
+    # "anthropic/claude-..." + เซ็ต base_url ให้อัตโนมัติ). /models คืน pricing+ctx+modality มาด้วย
+    "openrouter": {
+        "label": "OpenRouter",
+        "env_key": "OPENROUTER_API_KEY",
+        "default_model": "openai/gpt-4o-mini",
+        "route": {"kind": "litellm", "prefix": "openrouter"},
+        "list": {"url": "https://openrouter.ai/api/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    # M16-6 — GitHub Models (OpenAI-compatible inference). ใช้ env แยก GITHUB_MODELS_TOKEN
+    # (ไม่ใช้ GITHUB_TOKEN ของ M9-3 issues — แยกกันชัด ไม่ให้ provider โผล่เองโดยที่ user ไม่ได้ตั้งใจ;
+    # PAT ต้องมี scope models:read). crewai ไม่มี native "github" + ไม่มี litellm fallback → openai_compat
+    "github": {
+        "label": "GitHub Models",
+        "env_key": "GITHUB_MODELS_TOKEN",
+        "default_model": "openai/gpt-4o",
+        "route": {"kind": "openai_compat", "base_url": "https://models.github.ai/inference"},
+        "list": {"url": "https://models.github.ai/catalog/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}",
+                                       "Accept": "application/vnd.github+json",
+                                       "X-GitHub-Api-Version": "2022-11-28"}},
+    },
 }
 
-DEFAULT_CLOUD_MODELS = {
-    "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.5-flash",
-    "openai": "gpt-4o",
-    "grok": "grok-4.1-fast",       # ตัวถูก+เร็ว เป็น default ปลอดภัย
-    "deepseek": "deepseek-v4-flash",
-}
+# derived views — คงชื่อเดิมไว้ให้โค้ดที่ import อยู่ (accounts/models/settings routes) ไม่พัง
+# (single source of truth = PROVIDERS; ลำดับ provider คงเดิมตาม insertion order ของ dict)
+ENV_KEY_MAP = {p: s["env_key"] for p, s in PROVIDERS.items()}
+DEFAULT_CLOUD_MODELS = {p: s["default_model"] for p, s in PROVIDERS.items()}
 
-# M14-2 — LiteLLM provider prefix ต่อ provider (CrewAI LLM ส่งต่อ litellm).
-# deepseek เป็น native provider ของ litellm → "deepseek/" ตรง ๆ.
-LLM_PREFIX = {"claude": "anthropic", "gemini": "gemini", "openai": "openai",
-              "deepseek": "deepseek"}
 
-# M14-2 — provider ที่ litellm ไม่มี native แต่ endpoint เป็น OpenAI-compatible → route ผ่าน
-# "openai/<model>" + base_url. Grok (xAI) ไม่มี native provider "xai" ใน CrewAI build นี้
-# (และไม่ได้ลง litellm fallback) จึงต้องยิงแบบ openai-compatible ที่ api.x.ai/v1.
-CLOUD_BASE_URL = {"grok": "https://api.x.ai/v1"}
+# ─────────────────────────────────────────────────────────────────────────────
+# M16-2 — Model normalize + classify
+# ทุก provider คืนรูปร่าง model ต่างกัน → normalize เป็น ModelInfo รูปเดียว + จัดประเภท (kind)
+# kind ใช้ใน UI: "chat" = ใช้เป็นสมอง agent ได้ (โชว์ default); อื่น ๆ ซ่อนหลัง "แสดงทั้งหมด"
+#   ModelInfo = {id, label, kind, ctx, price_in, price_out}
+#   kind ∈ chat | embed | image | audio | video | other
+KIND_CHAT, KIND_EMBED, KIND_IMAGE, KIND_AUDIO, KIND_VIDEO, KIND_OTHER = \
+    "chat", "embed", "image", "audio", "video", "other"
+
+
+def _model_info(mid: str, label: str | None, kind: str,
+                ctx=None, price_in=None, price_out=None) -> dict:
+    return {"id": mid, "label": (label or mid), "kind": kind,
+            "ctx": ctx, "price_in": price_in, "price_out": price_out}
+
+
+def _kind_from_id(model_id: str) -> str:
+    """เดา kind จากชื่อ id (ใช้กับ provider ที่ไม่บอก capability ตรง ๆ เช่น openai/grok/deepseek)
+
+    หมายเหตุ: รุ่นที่ "รับภาพแต่ตอบเป็นข้อความ" (เช่น gpt-4o-vision) = chat — ห้าม map เป็น image.
+    image = รุ่นที่ **ออก**ภาพ (dall-e/imagen/gpt-image); video = veo/sora; audio = whisper/tts/lyria.
+    """
+    s = model_id.lower()
+    # specialized/tool models — ไม่ใช่ chat สมอง agent ทั่วไป (robotics/computer-use/research/AQA)
+    if s == "aqa" or any(x in s for x in ("robotics", "computer-use", "antigravity",
+                                          "deep-research", "moderation", "rerank", "guard")):
+        return KIND_OTHER
+    if any(x in s for x in ("embedding", "embed", "text-embedding")):
+        return KIND_EMBED
+    if any(x in s for x in ("whisper", "-tts", "tts-", "transcribe", "speech", "lyria")):
+        return KIND_AUDIO
+    if any(x in s for x in ("dall-e", "dalle", "gpt-image", "-image", "imagen",
+                            "image-generation", "nano-banana", "stable-diffusion", "flux")):
+        return KIND_IMAGE
+    if any(x in s for x in ("veo", "sora", "-video", "video-")):
+        return KIND_VIDEO
+    return KIND_CHAT
+
+
+def _parse_openai_like(data: dict) -> list[dict]:
+    """OpenAI/Claude/Grok/DeepSeek: {data:[{id, display_name?, ...}]} — classify จาก id"""
+    out = []
+    for m in data.get("data") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or m.get("name") or ""
+        if not mid:
+            continue
+        label = m.get("display_name") or m.get("name") or mid
+        out.append(_model_info(mid, label, _kind_from_id(mid)))
+    return out
+
+
+def _parse_gemini(data: dict) -> list[dict]:
+    """Gemini: {models:[{name:'models/..', displayName, supportedGenerationMethods, inputTokenLimit}]}
+    classify จาก supportedGenerationMethods (แม่นกว่าเดา id): generateContent=chat, embedContent=embed
+    """
+    out = []
+    for m in data.get("models") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = (m.get("name") or "").split("/")[-1]
+        if not mid:
+            continue
+        methods = m.get("supportedGenerationMethods") or []
+        # ชื่อ id บอกชนิดชัดก่อน (image/audio/video/robotics) — Gemini รุ่นใหม่รองรับ generateContent
+        # หมดแม้ output เป็นสื่ออื่น (เช่น Nano Banana=รูป, Lyria=เพลง, TTS=เสียง) จึงห้ามเชื่อ method อย่างเดียว
+        idk = _kind_from_id(mid)
+        if idk != KIND_CHAT:
+            kind = idk
+        elif any(x in methods for x in ("generateContent", "bidiGenerateContent")):
+            kind = KIND_CHAT
+        elif any(x in methods for x in ("embedContent", "embedText")):
+            kind = KIND_EMBED
+        else:
+            kind = KIND_OTHER   # predict/answer ฯลฯ ที่ไม่ใช่ chat
+        out.append(_model_info(mid, m.get("displayName"), kind, ctx=m.get("inputTokenLimit")))
+    return out
+
+
+def _per_mtok(v) -> float | None:
+    """ราคา per-token (string/float) → USD per 1M token; None ถ้าแปลงไม่ได้ (M16-6)"""
+    try:
+        return round(float(v) * 1_000_000, 4)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_openrouter(data: dict) -> list[dict]:
+    """OpenRouter: {data:[{id, name, pricing:{prompt,completion}, context_length, architecture:{output_modalities}}]}
+    classify จาก output_modalities (แม่น); pricing เป็น USD/token → ×1e6 = ราคาต่อ 1M (M16-5 เอาไปใช้)
+    """
+    out = []
+    for m in data.get("data") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or ""
+        if not mid:
+            continue
+        outmods = (m.get("architecture") or {}).get("output_modalities") or []
+        if outmods:
+            kind = (KIND_CHAT if "text" in outmods else KIND_IMAGE if "image" in outmods
+                    else KIND_AUDIO if "audio" in outmods else KIND_VIDEO if "video" in outmods
+                    else KIND_OTHER)
+        else:
+            kind = _kind_from_id(mid)
+        pr = m.get("pricing") or {}
+        out.append(_model_info(mid, m.get("name"), kind, ctx=m.get("context_length"),
+                               price_in=_per_mtok(pr.get("prompt")), price_out=_per_mtok(pr.get("completion"))))
+    return out
+
+
+def _parse_github(data) -> list[dict]:
+    """GitHub Models catalog — top-level อาจเป็น list หรือ {data:[..]}; field id/name + modalities (M16-6)"""
+    items = data if isinstance(data, list) else (data.get("data") or data.get("models") or [])
+    out = []
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or m.get("name") or ""
+        if not mid:
+            continue
+        outmods = m.get("supported_output_modalities") or m.get("output_modalities") or []
+        kind = (KIND_CHAT if "text" in outmods else _kind_from_id(mid)) if outmods else _kind_from_id(mid)
+        out.append(_model_info(mid, m.get("friendly_name") or m.get("name"), kind))
+    return out
+
+
+# ผูก parser เข้า registry (วางหลังนิยามฟังก์ชัน เพื่อไม่ต้องเรียงนิยามไว้ก่อน PROVIDERS)
+for _p in ("openai", "claude", "grok", "deepseek"):
+    PROVIDERS[_p]["list"]["parse"] = _parse_openai_like
+PROVIDERS["gemini"]["list"]["parse"] = _parse_gemini
+PROVIDERS["openrouter"]["list"]["parse"] = _parse_openrouter
+PROVIDERS["github"]["list"]["parse"] = _parse_github
+
+
+def normalize_models(provider: str, data: dict) -> list[dict]:
+    """raw จาก list-endpoint → list[ModelInfo] (M16-2)
+
+    ใช้ parser เฉพาะของ provider (PROVIDERS[..]['list']['parse']); ถ้าไม่มี/พัง→ generic fallback
+    (รองรับทั้ง {data:[..]} และ {models:[..]}, classify ด้วย _kind_from_id).
+    """
+    spec = PROVIDERS.get(provider) or {}
+    fn = (spec.get("list") or {}).get("parse")
+    if fn:
+        try:
+            return fn(data)
+        except Exception:  # noqa: BLE001 — parser พัง (shape เปลี่ยน) → อย่าให้ทั้ง validate ล้ม
+            pass
+    items = data if isinstance(data, list) else (data.get("data") or data.get("models") or [])
+    out = []
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or (m.get("name") or "").split("/")[-1]
+        if mid:
+            out.append(_model_info(mid, m.get("display_name") or m.get("displayName"), _kind_from_id(mid)))
+    return out
 
 
 class MissingAPIKeyError(Exception):
@@ -116,7 +337,7 @@ CLOUD_CATALOG: dict[str, list[dict]] = {
     # 2.5-pro = id ถูกแต่ free tier มัก 429 (rate limit). Gemini 3 (gemini-3-flash /
     # gemini-3.1-flash-lite) คืน 404 — ยังไม่เปิด/ชื่อ id ต่าง → ตัดออก ใส่กลับเมื่อยืนยัน id จริง
     "gemini": [
-        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro (อาจชน limit free tier)", "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",         "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",       "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
     ],
@@ -156,31 +377,17 @@ def cloud_models(provider: str) -> list[dict]:
     return CLOUD_CATALOG.get(provider, [])
 
 
-# M14-5 — endpoint สำหรับ validate API key (ping ดูว่า key ใช้ได้ + ดึงรายชื่อ model จริง)
-# header ต่อ provider ต่างกัน: claude=x-api-key, openai/grok/deepseek=Bearer, gemini=?key=
-_VALIDATE_EP: dict[str, dict] = {
-    "claude":   {"url": "https://api.anthropic.com/v1/models",
-                 "headers": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"}},
-    "openai":   {"url": "https://api.openai.com/v1/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "grok":     {"url": "https://api.x.ai/v1/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "deepseek": {"url": "https://api.deepseek.com/models",
-                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
-    "gemini":   {"url": "https://generativelanguage.googleapis.com/v1beta/models?key={k}",
-                 "headers": lambda k: {}},
-}
-
-
 def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
-    """ping provider ด้วย key → {ok, models?, error?} (M14-5)
+    """ping provider ด้วย key → {ok, models?, error?} (M14-5, ใช้ registry M16-1)
 
-    เรียก endpoint list-models ที่ราคาถูก/ฟรี — 200 = key ใช้ได้ + ดึง id model จริงมาด้วย
-    (เก็บเป็น allowed_models ของ account). 401/403 = key ผิด. ไม่ log/ไม่คาย key.
+    เรียก endpoint list-models (`PROVIDERS[provider]["list"]`) ที่ราคาถูก/ฟรี — 200 = key
+    ใช้ได้ + ดึง id model จริงมาด้วย (M16-3 จะ persist เป็น cache ของ account).
+    401/403 = key ผิด. ไม่ log/ไม่คาย key.
     """
     import urllib.error
     import urllib.request
-    ep = _VALIDATE_EP.get(provider)
+    spec = PROVIDERS.get(provider)
+    ep = spec.get("list") if spec else None
     if not ep:
         return {"ok": False, "error": f"provider {provider} ไม่รองรับ validate"}
     url = ep["url"].format(k=key)
@@ -188,9 +395,8 @@ def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
-        items = data.get("data") or data.get("models") or []
-        models = [m.get("id") or m.get("name", "") for m in items if isinstance(m, dict)]
-        return {"ok": True, "models": [m for m in models if m]}
+        # M16-2: คืน list[ModelInfo] (normalize+classify) แทน list[str] — M16-3 จะ persist เป็น cache
+        return {"ok": True, "models": normalize_models(provider, data)}
     except urllib.error.HTTPError as e:
         msg = "key ไม่ถูกต้อง/หมดอายุ" if e.code in (401, 403) else f"HTTP {e.code}"
         return {"ok": False, "error": msg}
@@ -199,8 +405,20 @@ def validate_cloud_key(provider: str, key: str, timeout: int = 12) -> dict:
 
 
 def cloud_price(provider: str, model: str) -> tuple[float, float] | None:
-    """ราคา (in, out) USD/1M token ของ model จาก catalog — None ถ้าไม่อยู่ใน catalog (M11-13)"""
-    for m in CLOUD_CATALOG.get(provider, []):
+    """ราคา (in, out) USD/1M token ของ model (M11-13, ขยาย M16-5)
+
+    ลำดับ: (1) account cache ที่มีราคาจริงต่อ key (เช่น OpenRouter ส่ง pricing มาด้วย)
+    → (2) CLOUD_CATALOG (curated, hand-verified) → None (cost_guard เหมา per-provider ต่อ)
+    """
+    try:  # 1) ราคาจริงจาก list-endpoint ที่ cache ไว้บน account (model dynamic ที่ไม่อยู่ catalog)
+        from ..services.account_store import account_store
+        for acc in account_store.accounts_for(provider):
+            for mi in acc.get("models") or []:
+                if mi.get("id") == model and mi.get("price_in") is not None:
+                    return (float(mi["price_in"]), float(mi.get("price_out") or 0.0))
+    except Exception:  # noqa: BLE001 — pricing ห้ามทำ cost_guard ล้ม
+        pass
+    for m in CLOUD_CATALOG.get(provider, []):  # 2) catalog
         if m["model"] == model:
             return (float(m["in"]), float(m["out"]))
     return None
@@ -279,14 +497,17 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
             f"ยังไม่ได้ตั้ง API key สำหรับ {cfg.provider} — ใส่ได้ที่ Settings"
         )
 
-    model = cfg.model or DEFAULT_CLOUD_MODELS[cfg.provider]
-    base = CLOUD_BASE_URL.get(cfg.provider)
-    if base:
-        # OpenAI-compatible endpoint (เช่น xAI/Grok) — CrewAI build นี้ไม่มี native "xai" และไม่ได้ลง
-        # litellm. ใช้ model ชื่อล้วน (ไม่ใส่ prefix) + base_url → CrewAI ยิงแบบ custom endpoint ได้
-        return LLM(model=model, api_key=key, base_url=base, **extra)
-    prefix = LLM_PREFIX[cfg.provider]
-    return LLM(model=f"{prefix}/{model}", api_key=key, **extra)
+    spec = PROVIDERS.get(cfg.provider)
+    if spec is None:
+        raise MissingAPIKeyError(f"ไม่รู้จัก provider {cfg.provider}")
+    model = cfg.model or spec["default_model"]
+    route = spec["route"]
+    if route["kind"] == "openai_compat":
+        # OpenAI-compatible endpoint (Grok/GitHub Models) — crewai จะ "ตัด prefix แรกของ model
+        # เป็น provider" เสมอ ทำให้ชื่อ vendor ของ model หาย (เช่น "openai/gpt-4o"→"gpt-4o").
+        # ใช้ passthrough "hosted_vllm/" (native ใน crewai) กันมันตัด → model คงครบ + ใช้ base_url เรา
+        return LLM(model=f"hosted_vllm/{model}", api_key=key, base_url=route["base_url"], **extra)
+    return LLM(model=f'{route["prefix"]}/{model}', api_key=key, **extra)
 
 
 def ollama_chat(

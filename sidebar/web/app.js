@@ -741,8 +741,10 @@ async function respondPerm(decision) {
 }
 
 function renderKeyStatus() {
+  // M16-8 — provider chips จาก registry (/accounts.providers) แทน hardcode 5 ตัว
+  const provs = cloudProviders.length ? cloudProviders : ["claude", "gemini", "openai", "grok", "deepseek"];
   document.getElementById("key-status").innerHTML =
-    ["claude", "gemini", "openai", "grok", "deepseek"].map(p => {
+    provs.map(p => {
       const on = keyStatus[p];
       return `<span class="key-chip ${on ? "on" : ""}">${p}: ${on ? "✓ set" : "—"}</span>`;
     }).join(" ");
@@ -750,9 +752,25 @@ function renderKeyStatus() {
 
 // M14 — บัญชี API key เก็บใน account_store (เข้ารหัส DPAPI) — ที่เดียว ผ่าน /accounts (เลิกใช้ legacy keys store)
 let cloudKeys = [];
+let cloudProviders = [];           // M16-8 — รายชื่อ provider จาก registry
+const MODEL_STALE_DAYS = 14;       // M16-8 — เกินนี้ = เตือน "ลิสต์อาจเก่า"
+
+// M16-8 — badge จำนวน model + ชิปเตือน staleness ต่อ account
+function _modelMeta(k) {
+  const cnt = (k.models_count == null) ? "" : `<span class="key-chip">${k.models_count} model</span>`;
+  let stale = "";
+  if (k.models_fetched_at) {
+    const days = (Date.now() / 1000 - k.models_fetched_at) / 86400;
+    if (days > MODEL_STALE_DAYS) stale = ` <span class="dim sm">⚠️ ลิสต์อาจเก่า (${Math.floor(days)} วัน) — รีเฟรช</span>`;
+  }
+  return cnt + stale;
+}
+
 async function loadKeys() {
-  try { cloudKeys = (await (await fetch(BASE + "/accounts")).json()).accounts || []; }
-  catch { cloudKeys = []; }
+  let resp = { accounts: [], providers: [] };
+  try { resp = await (await fetch(BASE + "/accounts")).json(); } catch { /* daemon down */ }
+  cloudKeys = resp.accounts || [];
+  if (resp.providers) cloudProviders = resp.providers.map(p => p.provider);
   keyStatus = {};
   for (const k of cloudKeys) keyStatus[k.provider] = true;
   renderKeyStatus();
@@ -760,9 +778,27 @@ async function loadKeys() {
   if (box) box.innerHTML = cloudKeys.length
     ? cloudKeys.map(k =>
         `<div class="key-item"><span class="key-chip on">${esc(k.provider)}</span> `
-        + `${esc(k.label)} <code>${esc(k.masked)}</code> `
+        + `${esc(k.label)} <code>${esc(k.masked)}</code> ${_modelMeta(k)} `
+        + `<button class="ghost sm" onclick="refreshAccountModels('${esc(k.id)}')">🔄 รีเฟรช</button> `
         + `<button class="ghost sm" onclick="deleteKey('${esc(k.id)}')">✕ ลบ</button></div>`).join("")
     : `<div class="dim">ยังไม่มี key</div>`;
+}
+
+// M16-8 — ผู้ใช้กดรีเฟรชเอง → ดึงลิสต์ใหม่ + toast diff (ไม่ auto, ตามมติ CEO)
+async function refreshAccountModels(id) {
+  feedLine("ln", "กำลังดึงรายชื่อ model ใหม่…");
+  try {
+    const res = await fetch(BASE + "/accounts/" + encodeURIComponent(id) + "/refresh-models", { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { feedLine("error", `รีเฟรชไม่สำเร็จ: ${d.detail || res.status}`); return; }
+    const added = (d.added || []).length, removed = (d.removed || []).length;
+    let msg = `อัปเดตแล้ว: ${d.total} model (${d.chat} ใช้กับ agent ได้)`;
+    if (added) msg += ` · 🆕 ใหม่ ${added}`;
+    if (removed) msg += ` · เอาออก ${removed}`;
+    feedLine("done", msg);
+    availableModels = null;   // ล้าง cache dropdown → Gear ครั้งหน้าเห็นของใหม่
+    loadKeys();
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
 }
 
 async function deleteKey(id) {
@@ -788,8 +824,9 @@ async function saveKey() {
   if (res.ok) {
     document.getElementById("key-value").value = "";
     document.getElementById("key-label").value = "";
-    const n = (d.models || []).length;
+    const n = d.models_count || 0;
     feedLine("done", `เพิ่ม ${provider} key แล้ว${n ? ` (${n} model พร้อมใช้)` : ""} — เข้ารหัสเก็บในเครื่อง`);
+    availableModels = null;   // M16-8 — ล้าง cache dropdown ให้เห็น model ของ key ใหม่
     loadKeys();
   } else {
     feedLine("error", `เพิ่ม key ไม่สำเร็จ: ${d.detail || res.status}`);
@@ -931,25 +968,48 @@ async function setAtmosphere(mode) {
 
 let availableModels = null;
 
-async function loadAvailableModels(force) {
-  if (availableModels && !force) return availableModels;
+// all=true → รวม model เฉพาะทาง (non-chat) ติด selectable:false; ไม่ cache (ใช้เฉพาะตอนกด "แสดงทั้งหมด")
+async function loadAvailableModels(force, all) {
+  if (availableModels && !force && !all) return availableModels;
   try {
-    availableModels = (await (await fetch(BASE + "/models/available")).json()).options || [];
+    const list = (await (await fetch(BASE + "/models/available" + (all ? "?all=1" : ""))).json()).options || [];
+    if (!all) availableModels = list;
+    return list;
   } catch {
-    availableModels = [{ provider: "ollama", model: "qwen3:8b", label: "qwen3:8b (local)", recommended: true }];
+    const fb = [{ provider: "ollama", model: "qwen3:8b", label: "qwen3:8b (local)", recommended: true }];
+    if (!all) availableModels = fb;
+    return fb;
   }
-  return availableModels;
 }
+
+// M16-10 — Cloud รวมกลุ่มเดียว (ไม่แยก section "แนะนำ"); ตัว ⭐ curated เรียงขึ้นก่อนในกลุ่ม
+// non-chat (เลือกไม่ได้) แยกกลุ่ม disabled. ป้ายฟรี/เสียเงินอยู่ในข้อความ label จาก backend
+const _MODEL_GROUPS = [
+  { label: "🖥 Local (ใช้ร่วมทั้งทีม)", match: o => o.provider === "ollama" },
+  { label: "☁ Cloud (มี API key)",      match: o => o.provider !== "ollama" && o.selectable !== false },
+  { label: "🧩 เฉพาะทาง (เลือกเป็นสมองไม่ได้)", match: o => o.selectable === false },
+];
 
 function fillModelSelect(sel, opts, current) {
   sel.innerHTML = "";
   let matched = false;
-  for (const o of opts) {
-    const op = document.createElement("option");
-    op.value = o.provider + "|" + o.model;   // 1 บรรทัด/model — key/บัญชีเลือกแยกที่ m-key
-    op.textContent = o.label;
-    if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
-    sel.appendChild(op);
+  const used = new Set();
+  for (const g of _MODEL_GROUPS) {
+    const items = opts.filter(o => !used.has(o) && g.match(o));
+    if (!items.length) continue;
+    items.sort((a, b) => (b.curated ? 1 : 0) - (a.curated ? 1 : 0));   // ⭐ แนะนำ ลอยบนสุดในกลุ่ม
+    const og = document.createElement("optgroup");
+    og.label = g.label;
+    for (const o of items) {
+      used.add(o);
+      const op = document.createElement("option");
+      op.value = o.provider + "|" + o.model;   // key/บัญชีเลือกแยกที่ m-key
+      op.textContent = o.label;
+      if (o.selectable === false) op.disabled = true;
+      if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
+      og.appendChild(op);
+    }
+    sel.appendChild(og);
   }
   if (current && current.model && !matched) {
     // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่ key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
@@ -959,6 +1019,27 @@ function fillModelSelect(sel, opts, current) {
     op.selected = true;
     sel.appendChild(op);
   }
+}
+
+// M16-7 — ลิงก์ "แสดงทั้งหมด" ใต้ select (เฉพาะ Gear ของ agent)
+let modelPickerAll = false;
+function renderModelMore() {
+  const el = document.getElementById("m-model-more");
+  if (!el) return;
+  el.innerHTML = modelPickerAll
+    ? `<a href="#" onclick="toggleAllModels(event)">▾ แสดงเฉพาะที่ใช้กับ agent ได้</a>`
+    : `<a href="#" onclick="toggleAllModels(event)">🔌 แสดง model ทั้งหมด (รวม embeddings/รูป/เสียง)</a>`;
+}
+async function toggleAllModels(e) {
+  if (e) e.preventDefault();
+  modelPickerAll = !modelPickerAll;
+  const a = agents[pickerAgentId];
+  const opts = await loadAvailableModels(true, modelPickerAll);
+  const sel = document.getElementById("m-model");
+  fillModelSelect(sel, opts, a ? a.llm : null);
+  sel.onchange = () => refreshKeyDropdown();
+  renderModelMore();
+  refreshKeyDropdown(a);
 }
 
 function parseModelVal(v) {
@@ -1021,8 +1102,10 @@ async function openModelPicker(agentId) {
   const a = agents[agentId];
   if (!a) return;
   pickerAgentId = agentId;
+  modelPickerAll = false;   // M16-7 — เริ่มที่ chat-only เสมอ (กระชับ)
   document.getElementById("m-agent-name").textContent = a.name;
   fillModelSelect(document.getElementById("m-model"), await loadAvailableModels(true), a.llm);
+  renderModelMore();         // M16-7 — ลิงก์ "แสดงทั้งหมด"
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3

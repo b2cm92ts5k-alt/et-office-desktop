@@ -11,7 +11,7 @@ import asyncio
 import os
 import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..adapters import model_catalog
@@ -69,13 +69,16 @@ def catalog() -> dict:
 
 
 @router.get("/available")
-def available() -> dict:
+def available(show_all: bool = Query(False, alias="all")) -> dict:
     """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): local ตัวเดียว (active) + cloud ที่มี key
     ใช้ร่วมกันทั้ง HIRE dialog, gear ของ agent, และ CEO onboarding (M8)
 
     M7-8: local เหลือ "ตัวเดียว" = active_local_model เท่านั้น — ทุก agent ใช้ตัวเดียวกัน
     จึงไม่มีทางเลือก local หลายตัวให้ผสมจน Ollama โหลดซ้อนกัน. อยากใช้ตัวอื่น = สลับ
     active ผ่าน Model Manager (เด้งยกทีม). งานเฉพาะทางที่ต้องแยก → ใช้ cloud (มี API key)
+
+    M16-7: default คืนเฉพาะ chat (โชว์ใน Gear); ?all=1 = แนบ model เฉพาะทาง (embeddings/
+    รูป/เสียง/วิดีโอ) ติด flag `selectable:false` ให้ UI โชว์แบบ disabled (ปุ่ม "แสดงทั้งหมด")
     """
     active = active_local_tag()
     opts: list[dict] = [{
@@ -86,32 +89,89 @@ def available() -> dict:
         "recommended": True,
     }]
 
-    def _model_opts(prov: str) -> list[dict]:
-        """ตัวเลือก model ของ provider (จาก catalog M11-13) + tag free/cost — 1 บรรทัด/model
-
-        account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
-        """
-        cat = cloud_models(prov)
-        if not cat:  # provider ไม่มีใน catalog → fallback default เดิม
-            dm = DEFAULT_CLOUD_MODELS[prov]
-            return [{"provider": prov, "model": dm, "account_id": "",
-                     "label": f"☁ {prov} ({dm})", "recommended": False}]
-        out = []
-        for m in cat:
-            tag = "🟢 free" if m["tier"] == "free" else f"💰 ${m['in']}→${m['out']}/1M"
-            out.append({"provider": prov, "model": m["model"], "account_id": "",
-                        "label": f"☁ {m['label']} · {tag}", "recommended": False})
-        return out
-
-    # provider ที่มี credential (account_store หรือ .env) → แสดง catalog ครั้งเดียว/provider
+    # provider ที่มี credential (account_store หรือ .env) → 1 บรรทัด/model/provider
     # (key/บัญชีไหน เลือกที่ key dropdown แยก — กัน model ซ้ำตามจำนวน key)
     from ..services.account_store import account_store
     has_cred = {a["provider"] for a in account_store.all_public()}
     has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
     for prov in ENV_KEY_MAP:  # คงลำดับ provider
         if prov in has_cred:
-            opts.extend(_model_opts(prov))
+            opts.extend(_cloud_model_opts(prov, include_all=show_all))
     return {"options": opts, "recommended_base": active}
+
+
+# M16-10 — provider ที่มี free tier จริง (ใช้ได้ฟรีแบบมีโควต้าต่อวัน):
+#   gemini = Google AI Studio free tier · github = GitHub Models (ฟรีช่วง preview, rate limit ต่อวัน)
+# provider นอกลิสต์นี้ = จ่ายตามใช้ (claude/openai/grok/deepseek). openrouter ดูราคาจริงต่อ model
+_FREE_TIER_PROVIDERS = {"gemini", "github"}
+
+
+def _price_tag(prov: str, c: dict | None, mi: dict | None) -> str:
+    """ป้ายฟรี/เสียเงินตามข้อมูลจริง — ราคาจริงมาก่อน (catalog→cache) ไม่มีก็ตาม policy ของ provider
+
+    ฟรีแบบ free-tier = "🟢 ฟรี*" (ดอกจัน = มีโควต้า/วัน ที่ต่างกันตามรุ่น, ไม่การันตีไม่จำกัด)
+    เสียเงิน = โชว์ราคาจริง $เข้า→$ออก /1M token ถ้ามี; ไม่มีตัวเลข = "จ่ายตามใช้ (ดูที่ผู้ให้บริการ)"
+    """
+    if c:  # catalog (curated, hand-verified)
+        return "🟢 ฟรี* · โควต้าตามรุ่น" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
+    pin, pout = (mi or {}).get("price_in"), (mi or {}).get("price_out")
+    if pin is not None:  # ราคาจริงจาก list-endpoint (เช่น OpenRouter)
+        if not pin and not (pout or 0):
+            return "🟢 ฟรี · มี rate limit"
+        return f"💰 ${pin}→${pout}/1M"
+    if prov in _FREE_TIER_PROVIDERS:   # ไม่รู้ราคาต่อ model แต่ provider มี free tier
+        return "🟢 ฟรี* · โควต้าตามรุ่น"
+    return "💰 จ่ายตามใช้ · ดูราคาที่ผู้ให้บริการ"
+
+
+def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
+    """ตัวเลือก cloud model ของ provider (M16-4) — dynamic จาก cache ของ key เป็นหลัก
+
+    1. union "chat" model จากทุก account ของ provider (ลิสต์จริงที่ key เปิด — dedup ตาม id)
+    2. overlay CLOUD_CATALOG: ถ้า id ตรง → ใช้ label ไทย/ราคา/ป้าย ⭐ (curated)
+    3. fallback: ไม่มี cache เลย (.env key ไม่เคย validate / offline ตอน add) → ใช้ catalog ทั้งชุด
+       (ถ้า catalog ก็ว่าง → default_model ตัวเดียว กันลิสต์โล่ง)
+    account/key เลือกแยกที่ key dropdown (UI) → ที่นี่ไม่ผูก account_id (= "")
+    """
+    from ..services.account_store import account_store
+
+    seen: dict[str, dict] = {}   # id -> ModelInfo (ตัวแรกที่เจอ = dedup ข้าม key)
+    for acc in account_store.accounts_for(prov):
+        for mi in acc.get("models") or []:
+            mid = mi.get("id")
+            if mi.get("kind") == "chat" and mid and mid not in seen:
+                seen[mid] = mi
+    cat = {m["model"]: m for m in cloud_models(prov)}   # overlay metadata
+
+    def _opt(mid: str, mi: dict | None, c: dict | None) -> dict:
+        # ⭐ นำหน้าตัวที่ curated (แนะนำ) — รวมในกลุ่ม Cloud เดียว ไม่แยก section แล้ว (M16-10)
+        base = (c["label"] if c else (mi or {}).get("label")) or mid
+        label = f"{'⭐ ' if c else ''}{base} · {_price_tag(prov, c, mi)}"
+        return {"provider": prov, "model": mid, "account_id": "", "label": label,
+                "recommended": False, "curated": bool(c), "kind": "chat"}
+
+    if seen:  # มี cache จริง = source of truth (โชว์เท่าที่ key เปิดให้ ไม่ยัด catalog ที่ key อาจไม่มี)
+        out = [_opt(mid, mi, cat.get(mid)) for mid, mi in seen.items()]
+    elif cat:  # ไม่มี cache → fallback catalog ทั้งชุด
+        out = [_opt(mid, None, c) for mid, c in cat.items()]
+    else:      # ไม่มีทั้ง cache+catalog → default ตัวเดียว
+        dm = DEFAULT_CLOUD_MODELS.get(prov)
+        out = [{"provider": prov, "model": dm, "account_id": "", "label": f"☁ {prov} ({dm})",
+                "recommended": False, "curated": False, "kind": "chat"}] if dm else []
+
+    if include_all:  # M16-7 "แสดงทั้งหมด" — แนบ model เฉพาะทาง (non-chat) แบบเลือกไม่ได้
+        spec: dict[str, dict] = {}
+        for acc in account_store.accounts_for(prov):
+            for mi in acc.get("models") or []:
+                mid = mi.get("id")
+                if mi.get("kind") != "chat" and mid and mid not in spec and mid not in seen:
+                    spec[mid] = mi
+        for mid, mi in spec.items():
+            out.append({"provider": prov, "model": mid, "account_id": "",
+                        "label": f"🧩 {mi.get('label') or mid} · {mi.get('kind')}",
+                        "recommended": False, "curated": False,
+                        "kind": mi.get("kind"), "selectable": False})
+    return out
 
 
 @router.post("/install")
