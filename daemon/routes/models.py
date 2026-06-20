@@ -11,7 +11,7 @@ import asyncio
 import os
 import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..adapters import model_catalog
@@ -69,13 +69,16 @@ def catalog() -> dict:
 
 
 @router.get("/available")
-def available() -> dict:
+def available(show_all: bool = Query(False, alias="all")) -> dict:
     """model ที่เลือกได้ตอนสร้าง/แก้ agent (M7-6): local ตัวเดียว (active) + cloud ที่มี key
     ใช้ร่วมกันทั้ง HIRE dialog, gear ของ agent, และ CEO onboarding (M8)
 
     M7-8: local เหลือ "ตัวเดียว" = active_local_model เท่านั้น — ทุก agent ใช้ตัวเดียวกัน
     จึงไม่มีทางเลือก local หลายตัวให้ผสมจน Ollama โหลดซ้อนกัน. อยากใช้ตัวอื่น = สลับ
     active ผ่าน Model Manager (เด้งยกทีม). งานเฉพาะทางที่ต้องแยก → ใช้ cloud (มี API key)
+
+    M16-7: default คืนเฉพาะ chat (โชว์ใน Gear); ?all=1 = แนบ model เฉพาะทาง (embeddings/
+    รูป/เสียง/วิดีโอ) ติด flag `selectable:false` ให้ UI โชว์แบบ disabled (ปุ่ม "แสดงทั้งหมด")
     """
     active = active_local_tag()
     opts: list[dict] = [{
@@ -93,11 +96,11 @@ def available() -> dict:
     has_cred |= {p for p, env in ENV_KEY_MAP.items() if os.environ.get(env)}
     for prov in ENV_KEY_MAP:  # คงลำดับ provider
         if prov in has_cred:
-            opts.extend(_cloud_model_opts(prov))
+            opts.extend(_cloud_model_opts(prov, include_all=show_all))
     return {"options": opts, "recommended_base": active}
 
 
-def _cloud_model_opts(prov: str) -> list[dict]:
+def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
     """ตัวเลือก cloud model ของ provider (M16-4) — dynamic จาก cache ของ key เป็นหลัก
 
     1. union "chat" model จากทุก account ของ provider (ลิสต์จริงที่ key เปิด — dedup ตาม id)
@@ -129,12 +132,27 @@ def _cloud_model_opts(prov: str) -> list[dict]:
                 "curated": bool(c), "kind": "chat"}   # curated → M16-7 จัดกลุ่ม ⭐
 
     if seen:  # มี cache จริง = source of truth (โชว์เท่าที่ key เปิดให้ ไม่ยัด catalog ที่ key อาจไม่มี)
-        return [_opt(mid, mi, cat.get(mid)) for mid, mi in seen.items()]
-    if cat:   # ไม่มี cache → fallback catalog ทั้งชุด
-        return [_opt(mid, None, c) for mid, c in cat.items()]
-    dm = DEFAULT_CLOUD_MODELS.get(prov)   # ไม่มีทั้ง cache+catalog → default ตัวเดียว
-    return [{"provider": prov, "model": dm, "account_id": "", "label": f"☁ {prov} ({dm})",
-             "recommended": False, "curated": False, "kind": "chat"}] if dm else []
+        out = [_opt(mid, mi, cat.get(mid)) for mid, mi in seen.items()]
+    elif cat:  # ไม่มี cache → fallback catalog ทั้งชุด
+        out = [_opt(mid, None, c) for mid, c in cat.items()]
+    else:      # ไม่มีทั้ง cache+catalog → default ตัวเดียว
+        dm = DEFAULT_CLOUD_MODELS.get(prov)
+        out = [{"provider": prov, "model": dm, "account_id": "", "label": f"☁ {prov} ({dm})",
+                "recommended": False, "curated": False, "kind": "chat"}] if dm else []
+
+    if include_all:  # M16-7 "แสดงทั้งหมด" — แนบ model เฉพาะทาง (non-chat) แบบเลือกไม่ได้
+        spec: dict[str, dict] = {}
+        for acc in account_store.accounts_for(prov):
+            for mi in acc.get("models") or []:
+                mid = mi.get("id")
+                if mi.get("kind") != "chat" and mid and mid not in spec and mid not in seen:
+                    spec[mid] = mi
+        for mid, mi in spec.items():
+            out.append({"provider": prov, "model": mid, "account_id": "",
+                        "label": f"🧩 {mi.get('label') or mid} · {mi.get('kind')}",
+                        "recommended": False, "curated": False,
+                        "kind": mi.get("kind"), "selectable": False})
+    return out
 
 
 @router.post("/install")

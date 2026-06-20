@@ -931,25 +931,47 @@ async function setAtmosphere(mode) {
 
 let availableModels = null;
 
-async function loadAvailableModels(force) {
-  if (availableModels && !force) return availableModels;
+// all=true → รวม model เฉพาะทาง (non-chat) ติด selectable:false; ไม่ cache (ใช้เฉพาะตอนกด "แสดงทั้งหมด")
+async function loadAvailableModels(force, all) {
+  if (availableModels && !force && !all) return availableModels;
   try {
-    availableModels = (await (await fetch(BASE + "/models/available")).json()).options || [];
+    const list = (await (await fetch(BASE + "/models/available" + (all ? "?all=1" : ""))).json()).options || [];
+    if (!all) availableModels = list;
+    return list;
   } catch {
-    availableModels = [{ provider: "ollama", model: "qwen3:8b", label: "qwen3:8b (local)", recommended: true }];
+    const fb = [{ provider: "ollama", model: "qwen3:8b", label: "qwen3:8b (local)", recommended: true }];
+    if (!all) availableModels = fb;
+    return fb;
   }
-  return availableModels;
 }
+
+// M16-7 — จัดกลุ่ม optgroup ให้ตัวดีลอยบน + เลือกไม่ได้ (non-chat) เป็น disabled → Gear ไม่รก
+const _MODEL_GROUPS = [
+  { label: "🖥 Local (ใช้ร่วมทั้งทีม)", match: o => o.provider === "ollama" },
+  { label: "⭐ แนะนำ",                  match: o => o.provider !== "ollama" && o.curated && o.selectable !== false },
+  { label: "☁ Cloud — ใช้ได้",         match: o => o.provider !== "ollama" && !o.curated && o.selectable !== false },
+  { label: "🧩 เฉพาะทาง (เลือกเป็นสมองไม่ได้)", match: o => o.selectable === false },
+];
 
 function fillModelSelect(sel, opts, current) {
   sel.innerHTML = "";
   let matched = false;
-  for (const o of opts) {
-    const op = document.createElement("option");
-    op.value = o.provider + "|" + o.model;   // 1 บรรทัด/model — key/บัญชีเลือกแยกที่ m-key
-    op.textContent = o.label;
-    if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
-    sel.appendChild(op);
+  const used = new Set();
+  for (const g of _MODEL_GROUPS) {
+    const items = opts.filter(o => !used.has(o) && g.match(o));
+    if (!items.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = g.label;
+    for (const o of items) {
+      used.add(o);
+      const op = document.createElement("option");
+      op.value = o.provider + "|" + o.model;   // key/บัญชีเลือกแยกที่ m-key
+      op.textContent = o.label;
+      if (o.selectable === false) op.disabled = true;
+      if (current && current.provider === o.provider && current.model === o.model) { op.selected = true; matched = true; }
+      og.appendChild(op);
+    }
+    sel.appendChild(og);
   }
   if (current && current.model && !matched) {
     // model ปัจจุบันไม่อยู่ในลิสต์ (เช่น cloud ที่ key ถูกลบ) — ค้าง option ไว้ไม่ให้ค่าหาย
@@ -959,6 +981,27 @@ function fillModelSelect(sel, opts, current) {
     op.selected = true;
     sel.appendChild(op);
   }
+}
+
+// M16-7 — ลิงก์ "แสดงทั้งหมด" ใต้ select (เฉพาะ Gear ของ agent)
+let modelPickerAll = false;
+function renderModelMore() {
+  const el = document.getElementById("m-model-more");
+  if (!el) return;
+  el.innerHTML = modelPickerAll
+    ? `<a href="#" onclick="toggleAllModels(event)">▾ แสดงเฉพาะที่ใช้กับ agent ได้</a>`
+    : `<a href="#" onclick="toggleAllModels(event)">🔌 แสดง model ทั้งหมด (รวม embeddings/รูป/เสียง)</a>`;
+}
+async function toggleAllModels(e) {
+  if (e) e.preventDefault();
+  modelPickerAll = !modelPickerAll;
+  const a = agents[pickerAgentId];
+  const opts = await loadAvailableModels(true, modelPickerAll);
+  const sel = document.getElementById("m-model");
+  fillModelSelect(sel, opts, a ? a.llm : null);
+  sel.onchange = () => refreshKeyDropdown();
+  renderModelMore();
+  refreshKeyDropdown(a);
 }
 
 function parseModelVal(v) {
@@ -1021,8 +1064,10 @@ async function openModelPicker(agentId) {
   const a = agents[agentId];
   if (!a) return;
   pickerAgentId = agentId;
+  modelPickerAll = false;   // M16-7 — เริ่มที่ chat-only เสมอ (กระชับ)
   document.getElementById("m-agent-name").textContent = a.name;
   fillModelSelect(document.getElementById("m-model"), await loadAvailableModels(true), a.llm);
+  renderModelMore();         // M16-7 — ลิงก์ "แสดงทั้งหมด"
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8
   await loadToolChecklist(a.allowed_tools || []);                       // M11-3
