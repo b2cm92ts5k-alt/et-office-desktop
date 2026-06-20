@@ -57,6 +57,37 @@ def main() -> None:
     check("มี _web_search (keyless DDG + optional Brave)", hasattr(TE, "_web_search"))
     check("query ว่าง → ขอ query (ไม่ throw)", TE._web_search("") == "ต้องมี query")
 
+    print("--- M15-5 Orchestrator (Sub-Agent) ---")
+    import json as _json
+    from daemon.services import orchestrator_service as OM
+    from daemon.services.agent_registry import registry
+    from daemon.services import task_router as TRmod
+    from daemon.services import ws_manager as WS
+    from daemon.adapters import llm_adapter as LA
+    from daemon.models.schemas import AgentConfig, TaskLog, LLMConfig
+
+    check("orchestrator_service + PLAN_SCHEMA", hasattr(OM, "orchestrator_service") and "plan" in OM.PLAN_SCHEMA["properties"])
+    rsrc = inspect.getsource(TaskRouter.route_and_execute)
+    check("route_and_execute: ไม่มี target → orchestrate", "orchestrate = True" in rsrc and "_default_agent" in rsrc)
+    esrc = inspect.getsource(TaskRouter._execute)
+    check("_execute เรียก orchestrator เมื่อ orchestrate", "orchestrator_service.run" in esrc)
+
+    # flow ด้วย stub (decompose 2 งาน → dispatch → synthesize)
+    prod = AgentConfig(name="Pro", role="Producer", is_ceo=False, llm=LLMConfig(provider="ollama"))
+    res = AgentConfig(name="Rey", role="Researcher", keywords=["วิจัย"], is_ceo=False)
+    prog = AgentConfig(name="Cody", role="Programmer", keywords=["code"], is_ceo=False)
+    registry._agents = {a.id: a for a in [prod, res, prog]}
+    check("_pick_agent ตาม role", OM.orchestrator_service._pick_agent("Researcher", "x").name == "Rey")
+    LA.ollama_chat = lambda messages, schema=None, **kw: (
+        _json.dumps({"plan": [{"role": "Researcher", "subtask": "ค้น X"},
+                              {"role": "Programmer", "subtask": "เขียน Y"}]}) if schema else "สรุปงานเสร็จ")
+    dispatched = []
+    TRmod.task_router.run_sync = lambda sub, agent, m=None: dispatched.append(agent.name) or f"done {sub.message}"
+    WS.ws_manager.broadcast_threadsafe = lambda loop, ev: None
+    out = OM.orchestrator_service.run(TaskLog(message="ทำ X", agent_id=prod.id, agent_name="Pro"), prod, {}, None)
+    check("orchestrate dispatch 2 agent ถูกตัว", dispatched == ["Rey", "Cody"], ",".join(dispatched))
+    check("synthesize คืนผลรวม", out == "สรุปงานเสร็จ")
+
     passed = sum(1 for ok, _ in _results if ok)
     total = len(_results)
     print(f"\n===== M15 QA: {passed}/{total} PASS =====")

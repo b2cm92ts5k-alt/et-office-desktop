@@ -161,23 +161,27 @@ class TaskRouter:
         agent_id: ระบุ agent เป้าหมายตรง ๆ (terminal เลือกผู้รับ, M13-7) — ถ้าเป็น CEO
         หรือไม่พบ ตกกลับ keyword match (CEO ไม่ทำงานเอง, M13-8).
         """
+        # M15-5: เลือกผู้รับตรง (terminal) → ทำเดี่ยว; คำสั่งทั่วไป → orchestrate (Sub-Agent เสมอ)
         agent_cfg = None
+        orchestrate = False
         if agent_id:
             target = registry.get(agent_id)
             if target and not target.is_ceo:
                 agent_cfg = target
         if agent_cfg is None:
-            agent_cfg = self._match_agent(message)
+            agent_cfg = self._default_agent(self._workers())  # Producer = orchestrator lead
+            orchestrate = True
         task = TaskLog(message=message, agent_id=agent_cfg.id, agent_name=agent_cfg.name)
         log_service.save_task(task)
-        log_service.add("task", f"routing → {agent_cfg.name}: {message[:120]}", agent_cfg.id)
+        verb = "orchestrate" if orchestrate else "routing"
+        log_service.add("task", f"{verb} → {agent_cfg.name}: {message[:120]}", agent_cfg.id)
 
         await ws_manager.broadcast({
             "type": "task.routing",
             "data": {"task_id": task.task_id, "agent_id": agent_cfg.id,
-                     "agent": agent_cfg.name, "message": message},
+                     "agent": agent_cfg.name, "message": message, "orchestrate": orchestrate},
         })
-        asyncio.create_task(self._execute(task, agent_cfg))
+        asyncio.create_task(self._execute(task, agent_cfg, orchestrate))
         return task
 
     def _workers(self) -> list[AgentConfig]:
@@ -227,7 +231,7 @@ class TaskRouter:
             "cache_hits": m.get("cache_hits", 0),
         }
 
-    async def _execute(self, task: TaskLog, agent_cfg: AgentConfig) -> None:
+    async def _execute(self, task: TaskLog, agent_cfg: AgentConfig, orchestrate: bool = False) -> None:
         await self._set_status(agent_cfg.id, "working")
         task.status = "working"
         log_service.save_task(task)
@@ -235,7 +239,14 @@ class TaskRouter:
         metrics: dict = {}
         started = time.monotonic()
         try:
-            output = await asyncio.to_thread(self._run_agent, task, agent_cfg, metrics)
+            if orchestrate:
+                # M15-5: Producer แตกงาน→มอบหมาย→รวมผล (subtask รัน tool-loop เดิม + permission gate)
+                from .orchestrator_service import orchestrator_service
+                loop = asyncio.get_running_loop()
+                output = await asyncio.to_thread(
+                    orchestrator_service.run, task, agent_cfg, metrics, loop)
+            else:
+                output = await asyncio.to_thread(self._run_agent, task, agent_cfg, metrics)
             task.status = "completed"
             task.output = output
             task.finished_at = _now()
