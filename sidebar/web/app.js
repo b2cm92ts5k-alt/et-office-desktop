@@ -741,8 +741,10 @@ async function respondPerm(decision) {
 }
 
 function renderKeyStatus() {
+  // M16-8 — provider chips จาก registry (/accounts.providers) แทน hardcode 5 ตัว
+  const provs = cloudProviders.length ? cloudProviders : ["claude", "gemini", "openai", "grok", "deepseek"];
   document.getElementById("key-status").innerHTML =
-    ["claude", "gemini", "openai", "grok", "deepseek"].map(p => {
+    provs.map(p => {
       const on = keyStatus[p];
       return `<span class="key-chip ${on ? "on" : ""}">${p}: ${on ? "✓ set" : "—"}</span>`;
     }).join(" ");
@@ -750,9 +752,25 @@ function renderKeyStatus() {
 
 // M14 — บัญชี API key เก็บใน account_store (เข้ารหัส DPAPI) — ที่เดียว ผ่าน /accounts (เลิกใช้ legacy keys store)
 let cloudKeys = [];
+let cloudProviders = [];           // M16-8 — รายชื่อ provider จาก registry
+const MODEL_STALE_DAYS = 14;       // M16-8 — เกินนี้ = เตือน "ลิสต์อาจเก่า"
+
+// M16-8 — badge จำนวน model + ชิปเตือน staleness ต่อ account
+function _modelMeta(k) {
+  const cnt = (k.models_count == null) ? "" : `<span class="key-chip">${k.models_count} model</span>`;
+  let stale = "";
+  if (k.models_fetched_at) {
+    const days = (Date.now() / 1000 - k.models_fetched_at) / 86400;
+    if (days > MODEL_STALE_DAYS) stale = ` <span class="dim sm">⚠️ ลิสต์อาจเก่า (${Math.floor(days)} วัน) — รีเฟรช</span>`;
+  }
+  return cnt + stale;
+}
+
 async function loadKeys() {
-  try { cloudKeys = (await (await fetch(BASE + "/accounts")).json()).accounts || []; }
-  catch { cloudKeys = []; }
+  let resp = { accounts: [], providers: [] };
+  try { resp = await (await fetch(BASE + "/accounts")).json(); } catch { /* daemon down */ }
+  cloudKeys = resp.accounts || [];
+  if (resp.providers) cloudProviders = resp.providers.map(p => p.provider);
   keyStatus = {};
   for (const k of cloudKeys) keyStatus[k.provider] = true;
   renderKeyStatus();
@@ -760,9 +778,27 @@ async function loadKeys() {
   if (box) box.innerHTML = cloudKeys.length
     ? cloudKeys.map(k =>
         `<div class="key-item"><span class="key-chip on">${esc(k.provider)}</span> `
-        + `${esc(k.label)} <code>${esc(k.masked)}</code> `
+        + `${esc(k.label)} <code>${esc(k.masked)}</code> ${_modelMeta(k)} `
+        + `<button class="ghost sm" onclick="refreshAccountModels('${esc(k.id)}')">🔄 รีเฟรช</button> `
         + `<button class="ghost sm" onclick="deleteKey('${esc(k.id)}')">✕ ลบ</button></div>`).join("")
     : `<div class="dim">ยังไม่มี key</div>`;
+}
+
+// M16-8 — ผู้ใช้กดรีเฟรชเอง → ดึงลิสต์ใหม่ + toast diff (ไม่ auto, ตามมติ CEO)
+async function refreshAccountModels(id) {
+  feedLine("ln", "กำลังดึงรายชื่อ model ใหม่…");
+  try {
+    const res = await fetch(BASE + "/accounts/" + encodeURIComponent(id) + "/refresh-models", { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { feedLine("error", `รีเฟรชไม่สำเร็จ: ${d.detail || res.status}`); return; }
+    const added = (d.added || []).length, removed = (d.removed || []).length;
+    let msg = `อัปเดตแล้ว: ${d.total} model (${d.chat} ใช้กับ agent ได้)`;
+    if (added) msg += ` · 🆕 ใหม่ ${added}`;
+    if (removed) msg += ` · เอาออก ${removed}`;
+    feedLine("done", msg);
+    availableModels = null;   // ล้าง cache dropdown → Gear ครั้งหน้าเห็นของใหม่
+    loadKeys();
+  } catch { feedLine("error", "ติดต่อ daemon ไม่ได้"); }
 }
 
 async function deleteKey(id) {
@@ -788,8 +824,9 @@ async function saveKey() {
   if (res.ok) {
     document.getElementById("key-value").value = "";
     document.getElementById("key-label").value = "";
-    const n = (d.models || []).length;
+    const n = d.models_count || 0;
     feedLine("done", `เพิ่ม ${provider} key แล้ว${n ? ` (${n} model พร้อมใช้)` : ""} — เข้ารหัสเก็บในเครื่อง`);
+    availableModels = null;   // M16-8 — ล้าง cache dropdown ให้เห็น model ของ key ใหม่
     loadKeys();
   } else {
     feedLine("error", `เพิ่ม key ไม่สำเร็จ: ${d.detail || res.status}`);
