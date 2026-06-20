@@ -10,8 +10,9 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
-from ..services.tool_executor import WorkspaceError, workspace_root
+from ..services.tool_executor import WorkspaceError, _resolve, workspace_root
 
 router = APIRouter(tags=["files"])
 
@@ -44,3 +45,18 @@ async def drop_file(file: UploadFile = File(...)) -> dict:
 
     rel = dest.relative_to(root).as_posix()
     return {"name": dest.name, "rel": rel, "path": str(dest), "size": len(data)}
+
+
+@router.get("/files/raw")
+def raw_file(path: str):
+    """serve ไฟล์ใน workspace (M17-7) — ใช้โชว์รูปที่ generate_image สร้าง (thumbnail ใน sidebar)
+    sandbox ผ่าน _resolve เดิม (กัน ../ traversal / absolute หลุด workspace)
+    """
+    try:
+        root = workspace_root()
+        fp = _resolve(path, root)
+    except WorkspaceError as e:
+        raise HTTPException(400, str(e))
+    if not fp.is_file():
+        raise HTTPException(404, "ไม่พบไฟล์")
+    return FileResponse(fp)

@@ -205,6 +205,11 @@ func _on_event(event: Dictionary) -> void:
 			_say(data, "ล้มเหลว: " + str(data.get("error", "")))
 			_fx_at(str(data.get("agent_id", "")), "fx_error")
 			_flash_screen(str(data.get("agent_id", "")), "error")
+		"image.generated":  # M17-7 — ET Artist วาดเสร็จ (ดูรูปจริงที่ sidebar; ในจอโชว์ bubble+flash)
+			var imgn: int = (data.get("paths", []) as Array).size()
+			_say(data, "🎨 วาดเสร็จ %d รูป: %s" % [imgn, str(data.get("prompt", ""))])
+			_fx_at(str(data.get("agent_id", "")), "fx_done")
+			_flash_screen(str(data.get("agent_id", "")), "done")
 		"social.chat":
 			_say(data, str(data.get("text", "")))
 		"agent.chat":

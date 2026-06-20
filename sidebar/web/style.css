@@ -269,6 +269,9 @@ section { padding: 10px 12px; }
 .model-legend { font-family: var(--font-thai); font-size: 10px; color: var(--sub);
   line-height: 15px; margin: 0 0 8px; }
 .model-legend b { color: var(--text); }
+.art-thumb { max-width: 120px; max-height: 120px; border: 1px solid var(--cyan);
+  border-radius: 4px; margin-top: 4px; image-rendering: pixelated; vertical-align: top; }
+.art-thumb:hover { box-shadow: 0 0 8px #00e5ff66; }
 .sprite-prev {
   width: 32px; height: 48px; object-fit: none; object-position: 0 0; /* โชว์เฟรมแรก SE */
   image-rendering: pixelated; border: 1px solid var(--border); background: var(--bg);

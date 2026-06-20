@@ -1364,6 +1364,16 @@ function handleEvent(ev) {
       recordStats(d);
       feedLine("error", `✘ ${esc(nameOf(d.agent_id))}: ${esc(trim(d.error, 200))}${fmtMetrics(d)}`);
       break;
+    case "image.generated": {   // M17-7 — ET Artist วาดเสร็จ → thumbnail คลิกเปิดเต็ม
+      const paths = d.paths || [];
+      const thumbs = paths.map(p => {
+        const u = BASE + "/files/raw?path=" + encodeURIComponent(p);
+        return `<a href="${u}" target="_blank" title="${esc(p)}"><img class="art-thumb" src="${u}" alt="art"></a>`;
+      }).join(" ");
+      feedLine("done", `🎨 <b>${esc(nameOf(d.agent_id))}</b> วาดเสร็จ <span class="dim sm">(${esc(d.model || "")})</span>: `
+        + `${esc(trim(d.prompt || "", 80))}<br>${thumbs}`);
+      break;
+    }
     case "orchestrate.plan":   // M15 — Producer แตกงานเป็น subtask
       feedLine("social", `👥 แตกงานเป็น ${(d.steps || []).length} ขั้น:`);
       for (const s of d.steps || []) feedLine("dim", `   • ${esc(s.role || "ทีม")}: ${esc(trim(s.subtask, 120))}`);
