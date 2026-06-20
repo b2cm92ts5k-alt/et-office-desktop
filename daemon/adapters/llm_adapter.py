@@ -118,6 +118,31 @@ PROVIDERS: dict[str, dict] = {
         "list": {"url": "https://api.deepseek.com/models",
                  "headers": lambda k: {"Authorization": f"Bearer {k}"}},
     },
+    # M16-6 — aggregator ข้ามค่าย (OpenAI-compatible). model id มี vendor นำหน้า
+    # (เช่น "anthropic/claude-..."); /models คืน pricing + context_length + modality มาให้ด้วย
+    "openrouter": {
+        "label": "OpenRouter",
+        "env_key": "OPENROUTER_API_KEY",
+        "default_model": "openai/gpt-4o-mini",
+        "route": {"kind": "openai_compat", "base_url": "https://openrouter.ai/api/v1",
+                  # OpenRouter แนะนำส่ง header ระบุแอป (จัดอันดับ/โควต้า) — ไม่บังคับแต่ใส่ไว้
+                  "extra_headers": {"HTTP-Referer": "https://github.com/b2cm92ts5k-alt/et-office-desktop",
+                                    "X-Title": "ET Office"}},
+        "list": {"url": "https://openrouter.ai/api/v1/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}"}},
+    },
+    # M16-6 — GitHub Models (OpenAI-compatible inference). ใช้ GitHub PAT ตัวเดียวกับ M9-3
+    # (scope models:read) → ใครตั้ง GitHub integration ไว้แล้ว ได้ provider นี้อัตโนมัติ
+    "github": {
+        "label": "GitHub Models",
+        "env_key": "GITHUB_TOKEN",
+        "default_model": "openai/gpt-4o",
+        "route": {"kind": "openai_compat", "base_url": "https://models.github.ai/inference"},
+        "list": {"url": "https://models.github.ai/catalog/models",
+                 "headers": lambda k: {"Authorization": f"Bearer {k}",
+                                       "Accept": "application/vnd.github+json",
+                                       "X-GitHub-Api-Version": "2022-11-28"}},
+    },
 }
 
 # derived views — คงชื่อเดิมไว้ให้โค้ดที่ import อยู่ (accounts/models/settings routes) ไม่พัง
@@ -198,11 +223,60 @@ def _parse_gemini(data: dict) -> list[dict]:
     return out
 
 
+def _per_mtok(v) -> float | None:
+    """ราคา per-token (string/float) → USD per 1M token; None ถ้าแปลงไม่ได้ (M16-6)"""
+    try:
+        return round(float(v) * 1_000_000, 4)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_openrouter(data: dict) -> list[dict]:
+    """OpenRouter: {data:[{id, name, pricing:{prompt,completion}, context_length, architecture:{output_modalities}}]}
+    classify จาก output_modalities (แม่น); pricing เป็น USD/token → ×1e6 = ราคาต่อ 1M (M16-5 เอาไปใช้)
+    """
+    out = []
+    for m in data.get("data") or []:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or ""
+        if not mid:
+            continue
+        outmods = (m.get("architecture") or {}).get("output_modalities") or []
+        if outmods:
+            kind = (KIND_CHAT if "text" in outmods else KIND_IMAGE if "image" in outmods
+                    else KIND_AUDIO if "audio" in outmods else KIND_VIDEO if "video" in outmods
+                    else KIND_OTHER)
+        else:
+            kind = _kind_from_id(mid)
+        pr = m.get("pricing") or {}
+        out.append(_model_info(mid, m.get("name"), kind, ctx=m.get("context_length"),
+                               price_in=_per_mtok(pr.get("prompt")), price_out=_per_mtok(pr.get("completion"))))
+    return out
+
+
+def _parse_github(data) -> list[dict]:
+    """GitHub Models catalog — top-level อาจเป็น list หรือ {data:[..]}; field id/name + modalities (M16-6)"""
+    items = data if isinstance(data, list) else (data.get("data") or data.get("models") or [])
+    out = []
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id") or m.get("name") or ""
+        if not mid:
+            continue
+        outmods = m.get("supported_output_modalities") or m.get("output_modalities") or []
+        kind = (KIND_CHAT if "text" in outmods else _kind_from_id(mid)) if outmods else _kind_from_id(mid)
+        out.append(_model_info(mid, m.get("friendly_name") or m.get("name"), kind))
+    return out
+
+
 # ผูก parser เข้า registry (วางหลังนิยามฟังก์ชัน เพื่อไม่ต้องเรียงนิยามไว้ก่อน PROVIDERS)
-# openrouter/github เพิ่ม parser ของตัวเองใน M16-6
 for _p in ("openai", "claude", "grok", "deepseek"):
     PROVIDERS[_p]["list"]["parse"] = _parse_openai_like
 PROVIDERS["gemini"]["list"]["parse"] = _parse_gemini
+PROVIDERS["openrouter"]["list"]["parse"] = _parse_openrouter
+PROVIDERS["github"]["list"]["parse"] = _parse_github
 
 
 def normalize_models(provider: str, data: dict) -> list[dict]:
@@ -218,8 +292,9 @@ def normalize_models(provider: str, data: dict) -> list[dict]:
             return fn(data)
         except Exception:  # noqa: BLE001 — parser พัง (shape เปลี่ยน) → อย่าให้ทั้ง validate ล้ม
             pass
+    items = data if isinstance(data, list) else (data.get("data") or data.get("models") or [])
     out = []
-    for m in (data.get("data") or data.get("models") or []):
+    for m in items:
         if not isinstance(m, dict):
             continue
         mid = m.get("id") or (m.get("name") or "").split("/")[-1]
