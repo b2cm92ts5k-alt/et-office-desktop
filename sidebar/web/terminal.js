@@ -185,9 +185,11 @@ async function submitTask() {
       body: JSON.stringify({ message: sent, agent_id: targetId }),
     });
     const data = await res.json();
+    // ใช้ model จริงจาก response (authoritative) ไม่ใช่ cache เก่าของหน้าต่างนี้ (fix 2026-06-21)
     const cfg = Object.values(agents).find(a => a.name === data.agent);
-    const model = cfg ? cfg.llm.model : "?";
-    feedLine("route", `→ มอบงานให้ <b>${esc(data.agent)}</b> (${esc(model)})`);
+    const model = data.model || (cfg ? cfg.llm.model : "?");
+    const orch = data.orchestrate ? " · แตกงาน" : "";
+    feedLine("route", `→ มอบงานให้ <b>${esc(data.agent)}</b> (${esc(model)})${orch}`);
   } catch {
     feedLine("error", "ส่ง task ไม่ได้ — daemon เปิดอยู่ไหม?");
   }

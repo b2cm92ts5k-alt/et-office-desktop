@@ -154,6 +154,18 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+def _friendly_error(exc) -> str:
+    """แปลง error ดิบ (เช่น 429 JSON ยาว) เป็นข้อความที่ CEO อ่านรู้เรื่อง + ทางแก้ (fix 2026-06-21)"""
+    s = str(exc)
+    low = s.lower()
+    if "429" in s or "resource_exhausted" in low or "quota" in low:
+        return ("⚠️ โควต้า model หมด (free tier จำกัดต่อวัน/นาที — โดยเฉพาะ gemini-2.5-pro) — "
+                "สลับเป็น gemini-2.5-flash หรือ model อื่นที่ ⚙️ Gear ของ agent หรือรอโควต้ารีเซ็ต")
+    if "api key" in low or "missing" in low and "key" in low:
+        return "ยังไม่ได้ตั้ง API key ของ provider นี้ — เพิ่มที่ Settings → API Keys"
+    return s[:300]
+
+
 class TaskRouter:
     async def route_and_execute(self, message: str, agent_id: str | None = None) -> TaskLog:
         """สร้าง task แล้วรันเบื้องหลัง — return ทันทีพร้อม task_id
@@ -179,7 +191,9 @@ class TaskRouter:
         await ws_manager.broadcast({
             "type": "task.routing",
             "data": {"task_id": task.task_id, "agent_id": agent_cfg.id,
-                     "agent": agent_cfg.name, "message": message, "orchestrate": orchestrate},
+                     "agent": agent_cfg.name, "message": message, "orchestrate": orchestrate,
+                     # model จริง ณ ตอน route (fix 2026-06-21) — UI ไม่ต้องเดาจาก cache เก่า
+                     "model": agent_cfg.llm.model, "provider": agent_cfg.llm.provider},
         })
         asyncio.create_task(self._execute(task, agent_cfg, orchestrate))
         return task
@@ -263,15 +277,16 @@ class TaskRouter:
                 "data": {"task_id": task.task_id, "agent_id": agent_cfg.id, "output": output, **stat},
             })
         except Exception as exc:  # LLM/network error — แจ้งทุก layer แล้ว agent กลับ idle
+            friendly = _friendly_error(exc)
             task.status = "failed"
-            task.output = str(exc)
+            task.output = friendly
             task.finished_at = _now()
             log_service.save_task(task)
             stat = self._metrics(agent_cfg, metrics, started)
-            log_service.add("error", f"task {task.task_id} failed: {exc}", agent_cfg.id)
+            log_service.add("error", f"task {task.task_id} failed: {str(exc)[:200]}", agent_cfg.id)
             await ws_manager.broadcast({
                 "type": "task.failed",
-                "data": {"task_id": task.task_id, "agent_id": agent_cfg.id, "error": str(exc), **stat},
+                "data": {"task_id": task.task_id, "agent_id": agent_cfg.id, "error": friendly, **stat},
             })
         finally:
             permission_gate.finish_task(task.task_id)  # ล้างสิทธิ์อนุมัติยกชุด (M6-8)

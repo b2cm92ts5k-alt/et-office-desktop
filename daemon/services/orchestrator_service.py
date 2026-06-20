@@ -40,6 +40,39 @@ PLAN_SCHEMA = {
 }
 
 
+def _parse_plan(raw: str) -> list[dict]:
+    """ดึง plan จากคำตอบ LLM แบบทนทาน (fix 2026-06-21) — รองรับหลายรูปแบบที่ model มักตอบ:
+    {"plan":[...]}, array เปล่า [...], หรือ object เดี่ยว {"role","subtask"} → คืน [{role,subtask}]
+    """
+    import re
+
+    from .task_router import _extract_json
+    txt = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL)
+    steps = None
+    obj = _extract_json(txt)
+    if isinstance(obj, dict) and isinstance(obj.get("plan"), list):
+        steps = obj["plan"]                  # {"plan":[...]} — รูปแบบหลัก
+    if steps is None:                        # array ดิบ [...] (ต้องเช็กก่อน single กัน _extract_json คว้า element แรก)
+        i = txt.find("[")
+        while i != -1 and steps is None:
+            try:
+                arr, _ = json.JSONDecoder().raw_decode(txt[i:])
+                if isinstance(arr, list):
+                    steps = arr
+            except json.JSONDecodeError:
+                pass
+            i = txt.find("[", i + 1)
+    if steps is None and isinstance(obj, dict) and obj.get("subtask"):
+        steps = [obj]                        # object เดี่ยว = งาน 1 ขั้น
+    if not isinstance(steps, list):
+        return []
+    out = []
+    for s in steps[:MAX_SUBTASKS]:
+        if isinstance(s, dict) and s.get("subtask"):
+            out.append({"role": str(s.get("role", "")), "subtask": str(s["subtask"])})
+    return out
+
+
 class OrchestratorService:
     def _team(self) -> list[AgentConfig]:
         """ทีมที่มอบงานได้ — ทุก agent ยกเว้น CEO (CEO ไม่ลงมือเอง M13-8)"""
@@ -60,37 +93,44 @@ class OrchestratorService:
         return picked if not picked.is_ceo else (team[0] if team else None)
 
     def _decompose(self, message: str, producer: AgentConfig, metrics: dict) -> list[dict]:
-        """แตกงานเป็น plan [{role, subtask}] — งานง่าย = 1 subtask. คืน [] ถ้าแตกไม่ได้"""
+        """แตกงานเป็น plan [{role, subtask}] — งานง่าย = 1 subtask. คืน [] ถ้าแตกไม่ได้
+
+        ทนทาน (fix 2026-06-21): cloud ลอง 2 ครั้ง + parse ยืดหยุ่น (รองรับ array/object เดี่ยว);
+        cloud ล้ม/ว่าง (เช่น 429 free tier) → fallback แตกงานด้วย local ollama (schema บังคับ)
+        เพื่อให้ "การแจกงาน" ยังเกิดแม้ cloud model ของ Producer มีปัญหา.
+        """
         roles = ", ".join(sorted({f"{a.role}" for a in self._team()})) or "ทั่วไป"
         sys = (
             "คุณคือหัวหน้าทีม (Producer) แตกคำสั่งของ CEO เป็นงานย่อยให้ลูกทีมทำ.\n"
             f"ลูกทีมที่มี (role): {roles}\n"
             f"กติกา: แตกเป็นงานย่อยที่ทำได้จริงไม่เกิน {MAX_SUBTASKS} ข้อ, เรียงตามลำดับการทำ, "
-            "แต่ละข้อระบุ role ลูกทีมที่เหมาะและคำสั่งย่อยที่ชัดเจน. "
-            "งานง่ายให้แตกแค่ 1 ข้อ. ตอบเป็น JSON ตาม schema เท่านั้น."
+            "แต่ละข้อระบุ role ลูกทีมที่เหมาะ (เลือกจากรายการข้างบน) และคำสั่งย่อยที่ชัดเจน. "
+            "งานง่ายแตกแค่ 1 ข้อก็ได้.\n"
+            'ตอบเป็น JSON object เดียวรูปแบบนี้เท่านั้น: {"plan":[{"role":"...","subtask":"..."}]} '
+            "ห้ามมีข้อความทักทาย/อธิบาย/markdown อื่นนอก JSON."
         )
         messages = [{"role": "system", "content": sys}, {"role": "user", "content": message}]
-        from .task_router import _extract_json
         from ..adapters.llm_adapter import get_llm, ollama_chat
         from .cost_guard import cost_guard
-        try:
-            if producer.llm.provider == "ollama" or cost_guard.over_budget():
-                raw = ollama_chat(messages, schema=PLAN_SCHEMA, temperature=0.3, stats=metrics, think=False)
-                data = json.loads(raw)
-            else:
+
+        use_local = producer.llm.provider == "ollama" or cost_guard.over_budget()
+        if not use_local:  # cloud — ลอง 2 ครั้ง, parse ยืดหยุ่น
+            try:
                 llm = get_llm(producer.llm, temperature=0.3)
-                data = _extract_json(str(llm.call(messages))) or {}
-        except Exception as exc:  # noqa: BLE001 — decompose ล้ม → คืน [] (caller fallback งานเดี่ยว)
-            log_service.add("error", f"decompose ล้มเหลว: {str(exc)[:120]}", producer.id)
-            return []
-        plan = data.get("plan") if isinstance(data, dict) else None
-        if not isinstance(plan, list):
-            return []
-        out = []
-        for step in plan[:MAX_SUBTASKS]:
-            if isinstance(step, dict) and step.get("subtask"):
-                out.append({"role": str(step.get("role", "")), "subtask": str(step["subtask"])})
-        return out
+                for _ in range(2):
+                    plan = _parse_plan(str(llm.call(messages)))
+                    if plan:
+                        return plan
+            except Exception as exc:  # noqa: BLE001 — cloud ล้ม (429/เน็ต) → ลอง local ต่อ
+                log_service.add("error", f"decompose cloud ล้ม ({str(exc)[:80]}) → แตกงานด้วย local แทน", producer.id)
+            use_local = True
+        if use_local:  # local ollama — schema บังคับ JSON (เสถียรกว่า + ฟรี ไม่ติดโควต้า)
+            try:
+                raw = ollama_chat(messages, schema=PLAN_SCHEMA, temperature=0.3, stats=metrics, think=False)
+                return _parse_plan(raw)
+            except Exception as exc:  # noqa: BLE001
+                log_service.add("error", f"decompose local ล้มเหลว: {str(exc)[:120]}", producer.id)
+        return []
 
     def _synthesize(self, message: str, results: list[tuple], producer: AgentConfig, metrics: dict) -> str:
         """รวมผล subtask ทั้งหมด → คำตอบสุดท้ายให้ CEO"""

@@ -23,7 +23,12 @@ class ChatRequest(BaseModel):
 @router.post("/task")
 async def submit_task(payload: TargetedTaskRequest) -> dict:
     task = await task_router.route_and_execute(payload.message, payload.agent_id or None)
-    return {"task_id": task.task_id, "agent": task.agent_name, "agent_id": task.agent_id}
+    # model จริงของผู้รับ ณ ตอนนี้ (authoritative) — กัน terminal โชว์ model เก่าจาก cache (fix 2026-06-21)
+    from ..services.agent_registry import registry
+    a = registry.get(task.agent_id)
+    return {"task_id": task.task_id, "agent": task.agent_name, "agent_id": task.agent_id,
+            "model": (a.llm.model if a else ""), "provider": (a.llm.provider if a else ""),
+            "orchestrate": not bool(payload.agent_id)}  # auto (ไม่เลือกผู้รับ) = แตกงาน
 
 
 @router.post("/chat")
