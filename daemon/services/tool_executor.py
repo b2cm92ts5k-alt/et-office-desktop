@@ -273,6 +273,11 @@ def _generate_image(args: dict, root: Path, agent) -> str:
         n = int(args.get("n", 1) or 1)
     except (TypeError, ValueError):
         n = 1
+    # M17-5 — model เสียเงิน + เกินงบ cloud ที่ตั้งไว้ → ไม่สร้าง (กันเงินรั่ว); ฟรีไม่บล็อก
+    from ..services.cost_guard import cost_guard
+    if cost_guard.image_price(provider, model) > 0 and cost_guard.over_budget():
+        return ("เกินงบ cloud ที่ตั้งไว้ — สร้างรูปด้วย model เสียเงินไม่ได้ตอนนี้ "
+                "(ปรับเพดานที่ Settings หรือสลับไป model ฟรี เช่น Nano Banana)")
     try:
         imgs = image_adapter.generate(provider, model, key, prompt,
                                       n=n, aspect=str(args.get("aspect", "1:1")))
@@ -288,8 +293,11 @@ def _generate_image(args: dict, root: Path, agent) -> str:
         rel = f"artwork/{stamp}_{base}{suffix}.png"
         _resolve(rel, root).write_bytes(raw)
         saved.append(rel)
+    usd = cost_guard.record_image(provider, model, len(saved))   # M17-5 — นับค่าใช้จ่ายต่อรูป
     _emit_image(agent, saved, prompt, f"{provider}/{model}")
-    return f"สร้างรูปแล้ว {len(saved)} ไฟล์ (model: {provider}/{model}): " + ", ".join(saved)
+    cost_note = f" · ~${round(usd, 3)}" if usd > 0 else " · ฟรี"
+    return (f"สร้างรูปแล้ว {len(saved)} ไฟล์ (model: {provider}/{model}{cost_note}): "
+            + ", ".join(saved))
 
 
 def execute(tool: str, args: dict, agent=None) -> str:

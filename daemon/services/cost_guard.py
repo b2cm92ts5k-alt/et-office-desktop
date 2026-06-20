@@ -24,6 +24,15 @@ PRICE_PER_MTOK: dict[str, float] = {
 }
 _WINDOW_KEEP = 86400  # เก็บ event ย้อนหลัง 24 ชม. พอสำหรับ cap รายวัน
 
+# M17 — ราคาประมาณต่อ "รูป" (USD) สำหรับ generate_image (ภาพคิดต่อรูป ไม่ใช่ต่อ token)
+# gemini Nano Banana = free tier (โควต้า) → 0; per-model override มาก่อน per-provider
+IMAGE_PRICE_PER_IMG: dict[str, float] = {"gemini": 0.0, "openai": 0.04}
+IMAGE_PRICE_MODEL: dict[str, float] = {
+    "gpt-image-1": 0.04, "dall-e-3": 0.04,
+    "imagen-4.0-generate-001": 0.04, "imagen-4.0-ultra-generate-001": 0.06,
+    "imagen-4.0-fast-generate-001": 0.02,
+}
+
 
 def est_tokens(messages: list[dict]) -> int:
     """ประเมิน token จากความยาว content (~4 ตัวอักษร/token) — ใช้กับ cloud ที่ไม่คาย usage"""
@@ -48,6 +57,20 @@ class CostGuard:
             usd = tokens_in / 1_000_000 * per[0] + tokens_out / 1_000_000 * per[1]
         else:
             usd = (tokens_in + tokens_out) / 1_000_000 * PRICE_PER_MTOK.get(provider, 0.0)
+        if usd > 0:
+            with self._lock:
+                now = time.time()
+                self._events.append((now, usd))
+                self._events = [(t, u) for t, u in self._events if now - t <= _WINDOW_KEEP]
+        return usd
+
+    def image_price(self, provider: str, model: str) -> float:
+        """ราคาประมาณต่อรูป (USD) — per-model ก่อน แล้ว per-provider; 0 = ฟรี (M17)"""
+        return IMAGE_PRICE_MODEL.get(model, IMAGE_PRICE_PER_IMG.get(provider, 0.0))
+
+    def record_image(self, provider: str, model: str, n: int = 1) -> float:
+        """บันทึกค่าใช้จ่ายการสร้างภาพ n รูป → คืน usd (free = 0) (M17-5)"""
+        usd = self.image_price(provider, model) * max(1, int(n or 1))
         if usd > 0:
             with self._lock:
                 now = time.time()
