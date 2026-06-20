@@ -280,7 +280,9 @@
 
     <label class="inline" style="margin-top:8px"><input type="checkbox" id="m-thinking"> โหมดคิดก่อนตอบ /think (วางแผน/orchestrator — ช้าลงแต่แม่นขึ้น; ปิด = worker เร็ว)</label>
 
-    <h3 style="margin:10px 0 4px">สิทธิ์ใช้ tool (M11-3)</h3>
+    <h3 style="margin:10px 0 4px">สิทธิ์ใช้ tool (M11-3)
+      <button class="ghost sm" id="m-preset-btn" onclick="applyRolePreset()" style="float:right">🎯 ใช้ tool ตาม role</button>
+    </h3>
     <div class="warn-note">ติ๊กเฉพาะ tool ที่อนุญาต — <b>ไม่ติ๊กเลย = อนุญาตทุก tool</b></div>
     <div id="m-tools" class="tool-checklist"></div>
     <label id="m-image-row" class="hidden">🎨 Model สร้างภาพ (สำหรับ generate_image) <select id="m-image"></select></label>
@@ -291,6 +293,6 @@
   </div>
 </div>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

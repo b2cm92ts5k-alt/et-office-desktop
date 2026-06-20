@@ -115,13 +115,20 @@ async function hireAgent() {
   };
   const msel = document.getElementById("h-model");
   if (msel && msel.value) payload.llm = parseModelVal(msel.value);
+  // M18 — auto ติ๊ก tool ตาม role ตอนจ้าง (agent ใหม่มาพร้อม tool ที่ใช่ ไม่ต้องเข้า Gear ติ๊กเอง)
+  let presetNote = "";
+  try {
+    const q = new URLSearchParams({ role, keywords: payload.keywords.join(",") });
+    const m = (await (await fetch(BASE + "/tools/presets?" + q)).json()).match;
+    if (m) { payload.allowed_tools = m.tools; presetNote = ` · tool ชุด '${m.preset}' (${m.tools.length})`; }
+  } catch {}
   const res = await fetch(BASE + "/agents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (res.ok) {
-    feedLine("done", `จ้าง ${name} เข้าทีมแล้ว${mdText ? " (พร้อม role .md)" : ""}`);
+    feedLine("done", `จ้าง ${name} เข้าทีมแล้ว${mdText ? " (พร้อม role .md)" : ""}${presetNote}`);
     if (mdText) {
       // เก็บ .md เข้าคลัง daemon/roles/ ให้ใช้ซ้ำได้ (M6-2)
       fetch(BASE + "/roles/save", {
@@ -1146,6 +1153,22 @@ async function loadToolChecklist(allowed) {
   ).join("");
   // M17-6 — ติ๊ก generate_image → โชว์/ซ่อนช่องเลือก image model
   box.onchange = () => updateImageRow(agents[pickerAgentId]);
+}
+
+// M18 — ปุ่ม "🎯 ใช้ tool ตาม role": ติ๊ก tool ของ preset ที่ match role (union กับที่ติ๊กเอง)
+async function applyRolePreset() {
+  const a = agents[pickerAgentId];
+  if (!a) return;
+  let m = null;
+  try {
+    const q = new URLSearchParams({ role: a.role || "", keywords: (a.keywords || []).join(",") });
+    m = (await (await fetch(BASE + "/tools/presets?" + q)).json()).match;
+  } catch {}
+  if (!m) { feedLine("ln", "ไม่มี preset tool ตรงกับ role นี้ — ติ๊กเองได้เลย"); return; }
+  const set = new Set(m.tools);
+  for (const cb of document.querySelectorAll("#m-tools input")) if (set.has(cb.value)) cb.checked = true;
+  await updateImageRow(a);   // ถ้า preset มี generate_image → โชว์ช่อง image model
+  feedLine("ln", `🎯 ติ๊ก tool ชุด '${esc(m.preset)}' (${m.tools.length}) ให้ ${esc(a.name)} แล้ว — กด SAVE เพื่อบันทึก`);
 }
 
 // M17-6 — ช่อง "🎨 Model สร้างภาพ" โผล่เฉพาะตอนเปิด tool generate_image (ไม่งั้น Gear รก)
