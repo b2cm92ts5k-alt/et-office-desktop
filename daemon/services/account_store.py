@@ -127,7 +127,15 @@ class ProviderAccountStore:
     def _public(self, a: dict) -> dict:
         sec = a.get("secret", {})
         return {"id": a["id"], "provider": a["provider"], "label": a.get("label", ""),
-                "auth_mode": a.get("auth_mode", "api_key"), "masked": mask(sec.get("key", ""))}
+                "auth_mode": a.get("auth_mode", "api_key"), "masked": mask(sec.get("key", "")),
+                # M16-3: จำนวน model + เวลาที่ดึงล่าสุด (ไม่คาย list เต็ม/secret) → UI โชว์ count + staleness
+                "models_count": a.get("models_count", len(a.get("models") or [])),
+                "models_fetched_at": a.get("models_fetched_at")}
+
+    def models_of(self, account_id: str) -> list[dict]:
+        """ลิสต์ ModelInfo ที่ cache ไว้บน account (M16-3) — ใช้ใน /models/available + GET …/models"""
+        a = self.get(account_id)
+        return list(a.get("models") or []) if a else []
 
     def get(self, account_id: str) -> dict | None:
         """คืน account เต็ม (มี secret) — ใช้ตอน resolve ค่า cloud call (get_llm)"""
@@ -137,14 +145,31 @@ class ProviderAccountStore:
         return None
 
     # ---- mutations ----
-    def add_api_key(self, provider: str, label: str, key: str) -> dict:
+    def add_api_key(self, provider: str, label: str, key: str,
+                    models: list[dict] | None = None) -> dict:
         entry = {"id": uuid4().hex[:8], "provider": provider,
                  "label": (label or "").strip() or "key", "auth_mode": "api_key",
                  "secret": {"key": key.strip()}, "created_at": time.time()}
+        if models is not None:  # M16-3: เก็บ cache ลิสต์ model ที่ validate ดึงมา (พร้อม timestamp)
+            entry["models"] = models
+            entry["models_fetched_at"] = time.time()
+            entry["models_count"] = len(models)
         with self._lock:
             self._accounts.append(entry)
             self._save()
         return self._public(entry)
+
+    def set_models(self, account_id: str, models: list[dict]) -> dict | None:
+        """อัปเดต cache ลิสต์ model ของ account (M16-3 refresh) — คืน public หรือ None ถ้าไม่พบ"""
+        with self._lock:
+            for a in self._accounts:
+                if a["id"] == account_id:
+                    a["models"] = models
+                    a["models_fetched_at"] = time.time()
+                    a["models_count"] = len(models)
+                    self._save()
+                    return self._public(a)
+        return None
 
     def delete(self, account_id: str) -> bool:
         with self._lock:
