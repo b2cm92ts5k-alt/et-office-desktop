@@ -1243,6 +1243,17 @@ function handleEvent(ev) {
       recordStats(d);
       feedLine("error", `✘ ${esc(nameOf(d.agent_id))}: ${esc(trim(d.error, 200))}${fmtMetrics(d)}`);
       break;
+    case "orchestrate.plan":   // M15 — Producer แตกงานเป็น subtask
+      feedLine("social", `👥 แตกงานเป็น ${(d.steps || []).length} ขั้น:`);
+      for (const s of d.steps || []) feedLine("dim", `   • ${esc(s.role || "ทีม")}: ${esc(trim(s.subtask, 120))}`);
+      break;
+    case "orchestrate.subtask":   // M15 — มอบหมายให้ลูกทีมทำทีละคน
+      setPill(d.agent_id, "working");
+      feedLine("ln", `→ [${d.index}/${d.total}] <b>${esc(nameOf(d.agent_id))}</b>: ${esc(trim(d.subtask, 150))}`);
+      break;
+    case "orchestrate.subtask.done":
+      setPill(d.agent_id, "idle");
+      break;
     case "social.meetup":
       feedLine("social", `☕ ${esc((d.names || []).join(" × "))} จับคู่คุยกัน`);
       break;

@@ -106,6 +106,13 @@ def main() -> None:
     check("orchestrate dispatch 2 agent ถูกตัว", dispatched == ["Rey", "Cody"], ",".join(dispatched))
     check("synthesize คืนผลรวม", out == "สรุปงานเสร็จ")
 
+    print("--- M15-7 delegation viz ---")
+    osrc = inspect.getsource(OM.OrchestratorService.run)
+    check("orchestrate emit agent.status (Godot reuse)", 'emit("agent.status"' in osrc and '"working"' in osrc)
+    web = Path(__file__).resolve().parent.parent / "sidebar" / "web"
+    appjs2 = (web / "app.js").read_text(encoding="utf-8")
+    check("app.js handle orchestrate.plan/subtask", "orchestrate.plan" in appjs2 and "orchestrate.subtask" in appjs2)
+
     passed = sum(1 for ok, _ in _results if ok)
     total = len(_results)
     print(f"\n===== M15 QA: {passed}/{total} PASS =====")

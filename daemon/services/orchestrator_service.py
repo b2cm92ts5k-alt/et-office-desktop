@@ -135,6 +135,8 @@ class OrchestratorService:
                 continue
             emit("orchestrate.subtask", {"index": i, "total": len(plan),
                                          "agent_id": agent.id, "agent": agent.name, "subtask": step["subtask"]})
+            # agent.status → Godot/sidebar reuse handler เดิม: sub-agent สว่าง/ทำงานทีละตัว (M15-7)
+            emit("agent.status", {"agent_id": agent.id, "status": "working"})
             log_service.add("task", f"  {i}/{len(plan)} → {agent.name}: {step['subtask'][:80]}", agent.id)
             sub = TaskLog(message=step["subtask"], agent_id=agent.id, agent_name=agent.name)
             try:
@@ -145,6 +147,7 @@ class OrchestratorService:
             finally:
                 permission_gate.finish_task(sub.task_id)
             results.append((agent, step["subtask"], out))
+            emit("agent.status", {"agent_id": agent.id, "status": "idle"})
             emit("orchestrate.subtask.done", {"index": i, "agent_id": agent.id})
 
         return self._synthesize(task.message, results, producer, metrics)
