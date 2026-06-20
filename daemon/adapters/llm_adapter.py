@@ -118,21 +118,20 @@ PROVIDERS: dict[str, dict] = {
         "list": {"url": "https://api.deepseek.com/models",
                  "headers": lambda k: {"Authorization": f"Bearer {k}"}},
     },
-    # M16-6 — aggregator ข้ามค่าย (OpenAI-compatible). model id มี vendor นำหน้า
-    # (เช่น "anthropic/claude-..."); /models คืน pricing + context_length + modality มาให้ด้วย
+    # M16-6 — aggregator ข้ามค่าย. crewai build นี้รู้จัก "openrouter" เป็น native provider →
+    # ใช้ litellm prefix "openrouter/" ได้เลย (มันเก็บ vendor sub-path ของ model ครบ เช่น
+    # "anthropic/claude-..." + เซ็ต base_url ให้อัตโนมัติ). /models คืน pricing+ctx+modality มาด้วย
     "openrouter": {
         "label": "OpenRouter",
         "env_key": "OPENROUTER_API_KEY",
         "default_model": "openai/gpt-4o-mini",
-        "route": {"kind": "openai_compat", "base_url": "https://openrouter.ai/api/v1",
-                  # OpenRouter แนะนำส่ง header ระบุแอป (จัดอันดับ/โควต้า) — ไม่บังคับแต่ใส่ไว้
-                  "extra_headers": {"HTTP-Referer": "https://github.com/b2cm92ts5k-alt/et-office-desktop",
-                                    "X-Title": "ET Office"}},
+        "route": {"kind": "litellm", "prefix": "openrouter"},
         "list": {"url": "https://openrouter.ai/api/v1/models",
                  "headers": lambda k: {"Authorization": f"Bearer {k}"}},
     },
     # M16-6 — GitHub Models (OpenAI-compatible inference). ใช้ GitHub PAT ตัวเดียวกับ M9-3
-    # (scope models:read) → ใครตั้ง GitHub integration ไว้แล้ว ได้ provider นี้อัตโนมัติ
+    # (scope models:read) → ใครตั้ง GitHub integration ไว้แล้ว ได้ provider นี้อัตโนมัติ.
+    # crewai ไม่มี native "github" + build นี้ไม่มี litellm fallback → route แบบ openai_compat
     "github": {
         "label": "GitHub Models",
         "env_key": "GITHUB_TOKEN",
@@ -496,13 +495,10 @@ def get_llm(cfg: LLMConfig, temperature: float | None = None) -> LLM:
     model = cfg.model or spec["default_model"]
     route = spec["route"]
     if route["kind"] == "openai_compat":
-        # OpenAI-compatible endpoint (Grok/OpenRouter/GitHub Models) — model ชื่อล้วน + base_url.
-        # บาง provider ต้องการ header เพิ่ม (เช่น OpenRouter: HTTP-Referer/X-Title) → extra_headers
-        kw: dict = {"base_url": route["base_url"]}
-        headers = route.get("extra_headers")
-        if headers:
-            kw["extra_headers"] = headers
-        return LLM(model=model, api_key=key, **kw, **extra)
+        # OpenAI-compatible endpoint (Grok/GitHub Models) — crewai จะ "ตัด prefix แรกของ model
+        # เป็น provider" เสมอ ทำให้ชื่อ vendor ของ model หาย (เช่น "openai/gpt-4o"→"gpt-4o").
+        # ใช้ passthrough "hosted_vllm/" (native ใน crewai) กันมันตัด → model คงครบ + ใช้ base_url เรา
+        return LLM(model=f"hosted_vllm/{model}", api_key=key, base_url=route["base_url"], **extra)
     return LLM(model=f'{route["prefix"]}/{model}', api_key=key, **extra)
 
 
