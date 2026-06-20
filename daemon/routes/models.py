@@ -100,6 +100,26 @@ def available(show_all: bool = Query(False, alias="all")) -> dict:
     return {"options": opts, "recommended_base": active}
 
 
+# M16-10 — provider ที่มี free tier จริง (ใช้ได้ฟรีแบบมีโควต้าต่อวัน):
+#   gemini = Google AI Studio free tier · github = GitHub Models (ฟรีช่วง preview, rate limit ต่อวัน)
+# provider นอกลิสต์นี้ = จ่ายตามใช้ (claude/openai/grok/deepseek). openrouter ดูราคาจริงต่อ model
+_FREE_TIER_PROVIDERS = {"gemini", "github"}
+
+
+def _price_tag(prov: str, c: dict | None, mi: dict | None) -> str:
+    """ป้ายฟรี/เสียเงินตามข้อมูลจริง — ราคาจริงมาก่อน (catalog→cache) ไม่มีก็ตาม policy ของ provider"""
+    if c:  # catalog (curated, hand-verified)
+        return "🟢 ฟรี · มี limit/วัน" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
+    pin, pout = (mi or {}).get("price_in"), (mi or {}).get("price_out")
+    if pin is not None:  # ราคาจริงจาก list-endpoint (เช่น OpenRouter)
+        if not pin and not (pout or 0):
+            return "🟢 ฟรี"
+        return f"💰 ${pin}→${pout}/1M"
+    if prov in _FREE_TIER_PROVIDERS:   # ไม่รู้ราคา แต่ provider มี free tier
+        return "🟢 ฟรี · มี limit/วัน"
+    return "💰 มีค่าใช้จ่าย · ตามผู้ให้บริการ"
+
+
 def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
     """ตัวเลือก cloud model ของ provider (M16-4) — dynamic จาก cache ของ key เป็นหลัก
 
@@ -120,16 +140,11 @@ def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
     cat = {m["model"]: m for m in cloud_models(prov)}   # overlay metadata
 
     def _opt(mid: str, mi: dict | None, c: dict | None) -> dict:
-        if c:  # catalog match → label/ราคา curated
-            label = c["label"]
-            tag = "🟢 free" if c["tier"] == "free" else f"💰 ${c['in']}→${c['out']}/1M"
-        else:  # dynamic ล้วน → ใช้ label/ราคาจาก list-endpoint (เช่น OpenRouter), ไม่มีก็ตามผู้ให้บริการ
-            label = (mi or {}).get("label") or mid
-            pin, pout = (mi or {}).get("price_in"), (mi or {}).get("price_out")
-            tag = f"💰 ${pin}→${pout}/1M" if pin is not None else "ราคาตามผู้ให้บริการ"
-        return {"provider": prov, "model": mid, "account_id": "",
-                "label": f"☁ {label} · {tag}", "recommended": False,
-                "curated": bool(c), "kind": "chat"}   # curated → M16-7 จัดกลุ่ม ⭐
+        # ⭐ นำหน้าตัวที่ curated (แนะนำ) — รวมในกลุ่ม Cloud เดียว ไม่แยก section แล้ว (M16-10)
+        base = (c["label"] if c else (mi or {}).get("label")) or mid
+        label = f"{'⭐ ' if c else ''}{base} · {_price_tag(prov, c, mi)}"
+        return {"provider": prov, "model": mid, "account_id": "", "label": label,
+                "recommended": False, "curated": bool(c), "kind": "chat"}
 
     if seen:  # มี cache จริง = source of truth (โชว์เท่าที่ key เปิดให้ ไม่ยัด catalog ที่ key อาจไม่มี)
         out = [_opt(mid, mi, cat.get(mid)) for mid, mi in seen.items()]

@@ -173,16 +173,19 @@ def _kind_from_id(model_id: str) -> str:
     image = รุ่นที่ **ออก**ภาพ (dall-e/imagen/gpt-image); video = veo/sora; audio = whisper/tts/lyria.
     """
     s = model_id.lower()
+    # specialized/tool models — ไม่ใช่ chat สมอง agent ทั่วไป (robotics/computer-use/research/AQA)
+    if s == "aqa" or any(x in s for x in ("robotics", "computer-use", "antigravity",
+                                          "deep-research", "moderation", "rerank", "guard")):
+        return KIND_OTHER
     if any(x in s for x in ("embedding", "embed", "text-embedding")):
         return KIND_EMBED
     if any(x in s for x in ("whisper", "-tts", "tts-", "transcribe", "speech", "lyria")):
         return KIND_AUDIO
-    if any(x in s for x in ("dall-e", "dalle", "gpt-image", "imagen", "image-generation", "stable-diffusion", "flux")):
+    if any(x in s for x in ("dall-e", "dalle", "gpt-image", "-image", "imagen",
+                            "image-generation", "nano-banana", "stable-diffusion", "flux")):
         return KIND_IMAGE
     if any(x in s for x in ("veo", "sora", "-video", "video-")):
         return KIND_VIDEO
-    if any(x in s for x in ("moderation", "rerank", "guard")):
-        return KIND_OTHER
     return KIND_CHAT
 
 
@@ -212,12 +215,17 @@ def _parse_gemini(data: dict) -> list[dict]:
         if not mid:
             continue
         methods = m.get("supportedGenerationMethods") or []
-        if any(x in methods for x in ("generateContent", "bidiGenerateContent")):
+        # ชื่อ id บอกชนิดชัดก่อน (image/audio/video/robotics) — Gemini รุ่นใหม่รองรับ generateContent
+        # หมดแม้ output เป็นสื่ออื่น (เช่น Nano Banana=รูป, Lyria=เพลง, TTS=เสียง) จึงห้ามเชื่อ method อย่างเดียว
+        idk = _kind_from_id(mid)
+        if idk != KIND_CHAT:
+            kind = idk
+        elif any(x in methods for x in ("generateContent", "bidiGenerateContent")):
             kind = KIND_CHAT
         elif any(x in methods for x in ("embedContent", "embedText")):
             kind = KIND_EMBED
         else:
-            kind = _kind_from_id(mid)   # imagen/veo/lyria/tts ตกมาทางนี้
+            kind = KIND_OTHER   # predict/answer ฯลฯ ที่ไม่ใช่ chat
         out.append(_model_info(mid, m.get("displayName"), kind, ctx=m.get("inputTokenLimit")))
     return out
 

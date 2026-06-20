@@ -61,9 +61,11 @@ def main() -> int:
         check("account cache เก็บ 4 model", len(account_store.models_of(gem_id)) == 4)
 
         # 2) /models/available — chat only + overlay catalog + non-chat ถูกตัด
+        #    (subset check — store อาจมี gemini account จริงของ CEO ปนอยู่ด้วย)
         opts = M.available(show_all=False)["options"]
         gem = {o["model"]: o for o in opts if o["provider"] == "gemini"}
-        check("available: chat only (2) ไม่มี embed/video", set(gem) == {"gemini-2.5-flash", "gemini-3-flash"})
+        check("available: chat ปรากฏ", {"gemini-2.5-flash", "gemini-3-flash"} <= set(gem))
+        check("available: embed/video ไม่อยู่ในกลุ่ม chat", "text-embedding-004" not in gem and "veo-2" not in gem)
         check("available: curated overlay (2.5-flash จาก catalog)", gem["gemini-2.5-flash"]["curated"] is True)
         check("available: non-catalog chat แสดงด้วย (3-flash)", gem["gemini-3-flash"]["curated"] is False)
 
@@ -79,7 +81,8 @@ def main() -> int:
         ortr_id = r2["id"]
         check("openrouter: cloud_price จาก account cache", L.cloud_price("openrouter", "anthropic/claude-3.5-sonnet") == (3.0, 15.0))
         oropts = {o["model"]: o for o in M.available(show_all=False)["options"] if o["provider"] == "openrouter"}
-        check("openrouter: chat only (flux image ถูกตัด)", set(oropts) == {"anthropic/claude-3.5-sonnet"})
+        check("openrouter: chat ปรากฏ + flux image ถูกตัด",
+              "anthropic/claude-3.5-sonnet" in oropts and "black-forest-labs/flux" not in oropts)
 
         # 5) refresh — เพิ่ม model ใหม่ใน canned → diff added
         CANNED["gemini"].append(mi("gemini-4-pro", "chat", label="Gemini 4 Pro"))
@@ -106,7 +109,7 @@ def main() -> int:
         check("routing github → คง 'openai/gpt-4o' + base_url github",
               ghllm.model == "openai/gpt-4o" and "models.github.ai" in (ghllm.base_url or ""))
         gho = {o["model"]: o for o in M.available(show_all=False)["options"] if o["provider"] == "github"}
-        check("github: chat only (embed ถูกตัด)", set(gho) == {"openai/gpt-4o"})
+        check("github: chat ปรากฏ + embed ถูกตัด", "openai/gpt-4o" in gho and "cohere/embed-v3" not in gho)
 
         # 8) backward-compat: catalog price ยังทำงาน, unknown → None
         check("compat: catalog price (claude opus)", L.cloud_price("claude", "claude-opus-4-8") == (5.0, 25.0))

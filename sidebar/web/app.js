@@ -982,11 +982,11 @@ async function loadAvailableModels(force, all) {
   }
 }
 
-// M16-7 — จัดกลุ่ม optgroup ให้ตัวดีลอยบน + เลือกไม่ได้ (non-chat) เป็น disabled → Gear ไม่รก
+// M16-10 — Cloud รวมกลุ่มเดียว (ไม่แยก section "แนะนำ"); ตัว ⭐ curated เรียงขึ้นก่อนในกลุ่ม
+// non-chat (เลือกไม่ได้) แยกกลุ่ม disabled. ป้ายฟรี/เสียเงินอยู่ในข้อความ label จาก backend
 const _MODEL_GROUPS = [
   { label: "🖥 Local (ใช้ร่วมทั้งทีม)", match: o => o.provider === "ollama" },
-  { label: "⭐ แนะนำ",                  match: o => o.provider !== "ollama" && o.curated && o.selectable !== false },
-  { label: "☁ Cloud — ใช้ได้",         match: o => o.provider !== "ollama" && !o.curated && o.selectable !== false },
+  { label: "☁ Cloud (มี API key)",      match: o => o.provider !== "ollama" && o.selectable !== false },
   { label: "🧩 เฉพาะทาง (เลือกเป็นสมองไม่ได้)", match: o => o.selectable === false },
 ];
 
@@ -997,6 +997,7 @@ function fillModelSelect(sel, opts, current) {
   for (const g of _MODEL_GROUPS) {
     const items = opts.filter(o => !used.has(o) && g.match(o));
     if (!items.length) continue;
+    items.sort((a, b) => (b.curated ? 1 : 0) - (a.curated ? 1 : 0));   // ⭐ แนะนำ ลอยบนสุดในกลุ่ม
     const og = document.createElement("optgroup");
     og.label = g.label;
     for (const o of items) {
