@@ -133,6 +133,23 @@ func _debug(msg: String) -> void:
 		f.close()
 
 
+# neon palette เดียวกับ autoColor ฝั่ง sidebar (app.js) — ใช้เลือกสีจากชื่อเมื่อ color เสีย
+const AURA_PALETTE := ["#e040fb", "#00e5ff", "#ff4da6", "#00ff9f", "#ffe040", "#ff6030"]
+
+
+func _agent_color(cfg: Dictionary) -> Color:
+	## คืนสีประจำ agent — กัน color เสีย/ว่าง/"None" (เคยทำให้ชื่อกลายเป็นเทาซีด)
+	## ถ้า hex ใช้ได้ → ใช้เลย; ไม่งั้นเลือกจาก palette ตามชื่อ (เสถียร + สีไม่ดับ)
+	var raw := str(cfg.get("color", "")).strip_edges()
+	if Color.html_is_valid(raw):
+		return Color(raw)
+	var who := str(cfg.get("name", "agent"))
+	var h := 0
+	for ch in who:
+		h = (h * 31 + ch.unicode_at(0)) & 0x7fffffff
+	return Color(AURA_PALETTE[h % AURA_PALETTE.size()])
+
+
 func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	var id := str(cfg.get("id", ""))
 	if id.is_empty() or _agents.has(id):
@@ -143,7 +160,7 @@ func _spawn_agent(cfg: Dictionary, index: int) -> void:
 	var sprite := AgentSprite.new()
 	sprite.setup(id, str(cfg.get("name", "agent")),
 		_sprite_key_for(str(cfg.get("role", "")) + " " + str(cfg.get("name", ""))),
-		Color(str(cfg.get("color", "#00e5ff"))),
+		_agent_color(cfg),
 		str(cfg.get("sprite", "")))  # custom spritesheet (M6-2 v2)
 	# CEO ยืนโต๊ะตัวเองที่ (3,2) เสมอ ไม่กิน DESK_SPOTS ของพนักงาน (ข้อ 5)
 	var desk := CEO_DESK if is_ceo else _claim_desk(id, index)

@@ -47,7 +47,7 @@ def parse_role_md(text: str, filename: str = "") -> RolePreset:
         name=str(meta.get("name", name)),
         role=str(meta.get("role", name)),
         avatar=str(meta.get("avatar", "🤖")),
-        color=str(meta.get("color", "#00e5ff")),
+        color=(str(meta.get("color")).strip() if meta.get("color") else "") or "#00e5ff",
         keywords=_as_keyword_list(meta.get("keywords")),
         system_prompt=body,
     )
