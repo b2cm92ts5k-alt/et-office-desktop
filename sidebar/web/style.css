@@ -261,6 +261,11 @@ section { padding: 10px 12px; }
 .sprite-row { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
 .tmpl-link { font-family: var(--font-thai); font-size: 11px; color: var(--cyan); text-decoration: none; }
 .tmpl-link:hover { text-decoration: underline; }
+/* M16-10 — ลิงก์ "แสดง model ทั้งหมด" ใต้ model picker (ให้มองเห็นชัดบนพื้นดำ) */
+#m-model-more { margin: -4px 0 6px; }
+#m-model-more a { font-family: var(--font-thai); font-size: 12px; color: var(--cyan);
+  text-decoration: underline; cursor: pointer; }
+#m-model-more a:hover { color: var(--green); }
 .sprite-prev {
   width: 32px; height: 48px; object-fit: none; object-position: 0 0; /* โชว์เฟรมแรก SE */
   image-rendering: pixelated; border: 1px solid var(--border); background: var(--bg);

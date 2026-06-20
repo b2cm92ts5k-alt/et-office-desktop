@@ -129,12 +129,12 @@ PROVIDERS: dict[str, dict] = {
         "list": {"url": "https://openrouter.ai/api/v1/models",
                  "headers": lambda k: {"Authorization": f"Bearer {k}"}},
     },
-    # M16-6 — GitHub Models (OpenAI-compatible inference). ใช้ GitHub PAT ตัวเดียวกับ M9-3
-    # (scope models:read) → ใครตั้ง GitHub integration ไว้แล้ว ได้ provider นี้อัตโนมัติ.
-    # crewai ไม่มี native "github" + build นี้ไม่มี litellm fallback → route แบบ openai_compat
+    # M16-6 — GitHub Models (OpenAI-compatible inference). ใช้ env แยก GITHUB_MODELS_TOKEN
+    # (ไม่ใช้ GITHUB_TOKEN ของ M9-3 issues — แยกกันชัด ไม่ให้ provider โผล่เองโดยที่ user ไม่ได้ตั้งใจ;
+    # PAT ต้องมี scope models:read). crewai ไม่มี native "github" + ไม่มี litellm fallback → openai_compat
     "github": {
         "label": "GitHub Models",
-        "env_key": "GITHUB_TOKEN",
+        "env_key": "GITHUB_MODELS_TOKEN",
         "default_model": "openai/gpt-4o",
         "route": {"kind": "openai_compat", "base_url": "https://models.github.ai/inference"},
         "list": {"url": "https://models.github.ai/catalog/models",
@@ -337,7 +337,7 @@ CLOUD_CATALOG: dict[str, list[dict]] = {
     # 2.5-pro = id ถูกแต่ free tier มัก 429 (rate limit). Gemini 3 (gemini-3-flash /
     # gemini-3.1-flash-lite) คืน 404 — ยังไม่เปิด/ชื่อ id ต่าง → ตัดออก ใส่กลับเมื่อยืนยัน id จริง
     "gemini": [
-        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro (อาจชน limit free tier)", "tier": "free", "in": 0, "out": 0},
+        {"model": "gemini-2.5-pro",         "label": "Gemini 2.5 Pro",         "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash",       "tier": "free", "in": 0, "out": 0},
         {"model": "gemini-2.5-flash-lite",  "label": "Gemini 2.5 Flash-Lite",  "tier": "free", "in": 0, "out": 0},
     ],
