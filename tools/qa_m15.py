@@ -50,6 +50,13 @@ def main() -> None:
     src = inspect.getsource(TaskRouter._run_tool_loop)
     check("inject skill ใน _run_tool_loop", "skill_service.context_block" in src)
 
+    print("--- M15-4 web_search tool ---")
+    from daemon.services import tool_executor as TE
+    check("web_search ใน TOOLS_SPEC", "web_search" in TE.TOOLS_SPEC)
+    check("web_search อยู่ใน preset researcher", "web_search" in TE.ROLE_TOOL_PRESETS["researcher"])
+    check("มี _web_search (keyless DDG + optional Brave)", hasattr(TE, "_web_search"))
+    check("query ว่าง → ขอ query (ไม่ throw)", TE._web_search("") == "ต้องมี query")
+
     passed = sum(1 for ok, _ in _results if ok)
     total = len(_results)
     print(f"\n===== M15 QA: {passed}/{total} PASS =====")
