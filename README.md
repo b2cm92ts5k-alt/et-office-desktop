@@ -1,53 +1,108 @@
 # ET Office Desktop Wallpaper
 
-> 🏢 Cyberpunk Synthwave isometric AI agent office — รันเป็น **live desktop wallpaper** บน Windows
-> ขับเคลื่อนด้วย **Ollama + Qwen** (local, ฟรี 100%) + **CrewAI** multi-agent framework
+> 🏢 Cyberpunk Synthwave isometric **AI agent office** — รันเป็น **live desktop wallpaper** บน Windows
+> ทีม AI ทำงานเป็นทีมจริง (Sub-Agent): หัวหน้าแตกงาน → มอบหมายลูกทีม → รวมผล
+> ขับเคลื่อนด้วย **Ollama + Qwen** (local, ฟรี 100%) — เสริม cloud ได้ 5 เจ้า (Claude/Gemini/GPT/Grok/DeepSeek)
 
-AI Agent ทีมงานเดินทำงาน ประชุม คุยกันเอง อยู่หลัง desktop icon ของคุณ — สั่งงานได้จริง
-ผ่าน terminal, จ้าง/ไล่ agent ได้, ให้ทีมสร้าง-แก้ไฟล์ใน workspace ได้โดย**ทุก action
-ต้องขออนุญาตคุณก่อนเสมอ** — ข้อมูลไม่ออกนอกเครื่อง ไม่ต้องจ่าย subscription
-ใส่ API key เสริม Claude / Gemini / GPT ได้ per-agent
+AI Agent ทีมงานเดินทำงาน ประชุม คุยกันเอง อยู่หลัง desktop icon ของคุณ — **สั่งงานได้จริง**:
+สั่งหนึ่งคำสั่ง → **Producer แตกงานเป็นขั้น แล้วกระจายให้ specialist ทำต่อกัน** → สร้าง/แก้ไฟล์,
+รันคำสั่ง, ค้นเว็บ ใน workspace ของคุณ โดย**ทุก action ต้องขออนุญาตคุณก่อนเสมอ** — ข้อมูลไม่ออก
+นอกเครื่อง ไม่ต้องจ่าย subscription
 
-<!-- TODO(M5-10): screenshot Golden Neon + demo GIF ตรงนี้ -->
+<!-- TODO: screenshot Golden Neon + demo GIF -->
+
+---
 
 ## ✨ Features
 
-- 🖥️ **Live wallpaper จริง** — ฝังใต้ desktop icon (WorkerW), pause อัตโนมัติเมื่อเปิดเกม
-  fullscreen (GPU เป้า <20%), ตรวจจับ Wallpaper Engine/Lively แล้ว pause ให้เอง
-- 🤖 **ทีม AI agent** — เดิน 6 โซนออฟฟิศ, สถานะ IDLE/WORKING/THINKING/COLLAB/BREAK/SLEEP,
-  คุยกันเองแล้วเสนอ proposal ให้คุณ approve/reject
-- ⌨️ **Terminal สั่งงานภาษาไทย** — พิมพ์สั่ง → ระบบ route หา agent ที่เหมาะ → ดูผลสด
-- 📁 **Agent Workforce** — ตั้งโฟลเดอร์ workspace แล้วทีมสร้าง/แก้/จัดระเบียบไฟล์,
-  รัน PowerShell, ค้นเว็บได้ — sandbox ใต้ workspace + permission gate ทุก action
-- 🧑‍💼 **Hire/Fire** — จ้าง agent ใหม่ด้วยไฟล์ role `.md` (หรือให้ AI ร่างให้) / ไล่ออกได้
+- 🤝 **ทำงานเป็นทีมจริง (Sub-Agent / Orchestrator)** — สั่งงานทั่วไป → Producer แตกงานเป็น subtask
+  อัตโนมัติ → มอบหมายให้ specialist ตาม role → รวมผลเป็นคำตอบเดียว (ดู agent สว่างทีละตัวในออฟฟิศ)
+- 🧠 **Skills** — สูตรทำงานทีละขั้นที่ inject ให้ agent อัตโนมัติเมื่องานตรง (วิจัย/เขียนโค้ด/วางแผน/
+  จัดไฟล์/ทำเกมเล็ก) — ทำให้ model local เก่งขึ้นโดยไม่ต้องพึ่ง cloud
+- 🖥️ **Live wallpaper จริง** — ฝังใต้ desktop icon (WorkerW), pause อัตโนมัติเมื่อเปิดเกม fullscreen
+- ⌨️ **Terminal สั่งงานภาษาไทย** — สั่งทีม / เลือกผู้รับตรง / คุยเล่นกับ agent ได้
+- 📁 **Agent Workforce + Tools** — ไฟล์ (สร้าง/อ่าน/แก้/ย้าย/ลบ), PowerShell, **web_search**, fetch_url,
+  Git, GitHub issues — sandbox ใต้ workspace + **permission gate ทุก action**
+- ☁️ **Cloud per-agent (optional)** — เลือก model + บัญชี key ต่อ agent (Claude/Gemini/GPT/Grok/DeepSeek);
+  API key เก็บ **เข้ารหัส DPAPI** ในเครื่อง
+- 🧑‍💼 **Hire/Fire + Roles** — จ้าง agent ด้วยไฟล์ role `.md` (หรือให้ AI ร่าง) / ไล่ออกได้
 - 🌆 **บรรยากาศตามเวลาจริง** — Dawn Boot / Cyber Day / Golden Neon / Deep Night
-- 🔒 **Privacy first** — ค่า default ทุกอย่างรัน local (Ollama), API key เก็บใน `.env`
-  บนเครื่องเท่านั้น
+- 🔒 **Privacy first** — default รัน local ทั้งหมด (Ollama); secret อยู่แค่ในเครื่อง ไม่ log/ไม่ส่งออก
+
+---
 
 ## 📦 ติดตั้ง (ผู้ใช้ทั่วไป)
 
-ความต้องการ: **Windows 10/11** + GPU (แนะนำ VRAM 6GB+ สำหรับ qwen3:8b — น้อยกว่านี้
-installer เลือก model เล็กให้อัตโนมัติ)
+ความต้องการ: **Windows 10/11** + GPU (แนะนำ VRAM 6GB+ สำหรับ qwen3:8b — น้อยกว่านี้ installer
+เลือก model เล็กให้อัตโนมัติ)
 
 1. ดาวน์โหลด zip จาก [Releases](../../releases) แล้วแตกไฟล์
 2. คลิกขวา `install.ps1` → **Run with PowerShell**
-   (ตรวจ/ติดตั้ง Ollama + WebView2 → เลือก model ตาม VRAM → pull → ติดตั้งลง
-   `%LOCALAPPDATA%\ET-Office` + สร้าง shortcut)
+   (ตรวจ/ติดตั้ง Ollama + WebView2 → เลือก model ตาม VRAM → pull → ติดตั้งลง `%LOCALAPPDATA%\ET-Office`)
 3. เปิดจาก shortcut **ET Office** — wallpaper + sidebar ขึ้นเอง
 
-ปิดทั้งระบบ: คลิกขวา tray icon ET → ออกจาก ET Office (หรือ Ctrl+C ที่หน้าต่าง launcher)
-ถอนการติดตั้ง: ลบโฟลเดอร์ `%LOCALAPPDATA%\ET-Office` + shortcut — ไม่มี registry
+ปิดทั้งระบบ: คลิกขวา tray icon ET → ออกจาก ET Office · ถอนการติดตั้ง: ลบโฟลเดอร์ `%LOCALAPPDATA%\ET-Office`
++ shortcut (ไม่มี registry)
 
-## 🚀 เริ่มใช้งาน
+---
 
-| อยากทำ | ทำที่ไหน |
-|---|---|
-| สั่งงาน agent | หน้าต่าง **ET Terminal** — พิมพ์ภาษาไทยได้เลย |
-| ดูสถานะทีม / จ้าง / ไล่ออก | Sidebar → Agent list (ปุ่ม + Hire Agent) |
-| ให้ทีมทำงานกับไฟล์จริง | Sidebar → Settings → เลือก **Workspace folder** |
-| อนุมัติ action ของทีม | Dialog เด้งใน sidebar — Approve / Deny / อนุมัติทั้ง task |
-| สลับ model (local↔cloud) | Sidebar → Settings → model picker ต่อ agent + ใส่ API key |
-| เปลี่ยนบรรยากาศ | Sidebar → Settings → Atmosphere picker |
+## 📖 คู่มือการใช้งาน (Manual)
+
+### 1) สั่งงานทีม — Sub-Agent / Orchestrator
+หัวใจของ ET Office: พิมพ์คำสั่งใน **ET Terminal** (ไม่ต้องเลือกผู้รับ) ระบบจะ:
+1. **Producer แตกงาน** เป็นขั้น ๆ + เลือก specialist ที่เหมาะ (เห็นใน feed: `👥 แตกงานเป็น N ขั้น`)
+2. **ลูกทีมลงมือทีละคน** (เห็น `→ [1/N] ชื่อ agent: งานย่อย` + agent สว่างในออฟฟิศ)
+3. **รวมผลเป็นคำตอบเดียว** ให้คุณ
+
+> 💡 ตัวอย่าง: *"ค้นข้อมูลคู่แข่ง 3 เจ้า แล้วทำเอกสารสรุป + ร่างแผนการตลาด"* → Researcher ค้น →
+> Producer สรุป → ทีมร่างแผน
+> 💡 อยากให้แตกงานแม่นขึ้น: ตั้ง Producer ให้ใช้ **cloud (Claude Sonnet)** ที่ ⚙ (qwen3 local พอได้
+> แต่งานซับซ้อนอาจแตกเพี้ยน)
+
+**สั่งคนเดียว / คุยเล่น:** ในเทอร์มินอลเลือกผู้รับ (agent เจาะจง) = ทำเดี่ยวไม่แตกงาน · ปุ่ม 💬 คุยเล่น
+= สนทนาเฉย ๆ (ถ้าขอให้ทำงานจริงจะ escalate เป็น task ให้)
+
+### 2) Workspace + Tools + Permission
+ก่อนทีมทำงานกับไฟล์ได้ ต้องตั้ง **Workspace folder** ก่อน (Sidebar → Settings):
+- agent ทำได้เฉพาะ **ใต้โฟลเดอร์ workspace** (sandbox — ออกนอกไม่ได้)
+- **ทุก action เด้ง dialog ขออนุญาต** → Approve / Deny / "อนุมัติที่เหลือทั้ง task นี้"
+- Tools: `list_dir` `read_file` `write_file` `mkdir` `move` `delete` `powershell` `web_search`
+  `fetch_url` `git_*` `gh_*`
+- จำกัด tool ต่อ agent ได้ที่ ⚙ → ติ๊กเฉพาะที่อนุญาต (**ไม่ติ๊ก = อนุญาตทุก tool**)
+
+### 3) Skills (สูตรทำงาน)
+Sidebar → Settings → **SKILLS** — เปิด/ปิด/ดูสูตรได้ สกิลจะ inject ให้ agent อัตโนมัติเมื่องานตรงคีย์เวิร์ด
+(เช่น "ค้นข้อมูล...รายงาน" → สูตร research-and-report) สกิลในตัว: research-and-report, build-feature,
+write-plan, organize-files, small-game-team · เพิ่มเองได้ที่ `daemon/data/skills/*.md`
+
+### 4) Cloud API Keys + เลือก model ต่อ agent
+- Sidebar → Settings → **API KEYS** → เลือก provider (Claude/Gemini/GPT/Grok/DeepSeek) + วาง key →
+  ADD (validate + เก็บ **เข้ารหัส DPAPI**) · ใส่ใน `.env` ก็ได้ (ดู `.env.example`)
+- ที่ ⚙ ของ agent: เลือก **Model** ก่อน → เลือก **Key/บัญชี** (จากชื่อที่ตั้งไว้)
+- ⚠️ **ใช้ได้เฉพาะ API key** — ค่าสมาชิกแชต (ChatGPT Plus / Gemini Advanced / Claude Pro / SuperGrok)
+  เอามายิงจากแอปไม่ได้ (ผิด ToS ของผู้ให้บริการ) ต้องใช้ developer API key เท่านั้น
+- web_search: ฟรี (DuckDuckGo) — ใส่ `BRAVE_API_KEY` ถ้าอยากแม่นขึ้น
+
+### 5) Model Manager (local)
+Sidebar → Settings → **LOCAL MODELS** — ติดตั้ง/สลับ local model (ผ่าน Ollama) · กฎ: ใช้ local
+**ตัวเดียวทั้งทีม** ในแต่ละครั้ง (กันโหลดหลายตัวจน VRAM ล้น) — สลับได้ผ่านปุ่ม "สลับมาใช้"
+
+### 6) Hire / Fire / Roles
+Sidebar → Agent list → **+ Hire** — แนบไฟล์ role `.md` (upload หรือเขียนในแอป) หรือให้ AI ร่างให้ →
+ผูก system prompt + keywords · ไล่ออกด้วยปุ่ม ✕ (CEO ไล่ไม่ได้)
+
+### 7) GitHub (optional)
+Settings → ผูก **GitHub token** (fine-grained) + ตั้ง repo → agent ใช้ `gh_*` (issue) + `git_*`
+(commit/push) ได้ — ทุกอย่างผ่าน permission gate
+
+### 8) MCP servers (optional)
+Settings → เพิ่ม MCP server (stdio) → tool ของ server โผล่ให้ agent ใช้ (namespaced `mcp__srv__tool`)
+
+### 9) บรรยากาศ / wallpaper
+Settings → Atmosphere picker (Dawn/Day/Golden/Night) · wallpaper แสดงบนจอหลักเท่านั้น · pause เองเมื่อ
+มีแอป fullscreen
+
+---
 
 ## 🧑‍💻 Dev Setup
 
@@ -62,16 +117,16 @@ winget install GodotEngine.GodotEngine   # Godot 4.6+
 ```
 
 รันทั้งระบบ: ดับเบิลคลิก **`et-office.cmd`** (หรือ `--window` ให้ Godot เป็นหน้าต่างปกติ)
-รายละเอียด workflow ทั้งหมด (รันแยกส่วน, ถ่ายทำ, จูนภาพ, QA gates, troubleshooting):
-**[docs/DEV-RUN-GUIDE.md](docs/DEV-RUN-GUIDE.md)**
+รายละเอียด workflow (รันแยกส่วน, จูนภาพ, QA gates, troubleshooting): **[docs/DEV-RUN-GUIDE.md](docs/DEV-RUN-GUIDE.md)**
 
-Build แจกจ่าย: `powershell -ExecutionPolicy Bypass -File installer\build.ps1`
-→ `dist\ET-Office\` (PyInstaller 3 exe + Godot export — ดู guide §5.5)
+QA แต่ละ milestone: `python tools/qa_m11.py` … `qa_m15.py` · Build แจกจ่าย: `installer\build.ps1` → `dist\ET-Office\`
+
+---
 
 ## Architecture
 
 ```
-Godot 4 (wallpaper renderer)  ←─ WebSocket ─→  Python FastAPI Daemon  ←─→  CrewAI + Ollama
+Godot 4 (wallpaper renderer)  ←─ WebSocket ─→  Python FastAPI Daemon  ←─→  CrewAI + Ollama / Cloud
 Sidebar UI (webview2)         ←─ HTTP/WS ───→       (source of truth)        Qwen (local default)
 ```
 
@@ -79,17 +134,23 @@ Sidebar UI (webview2)         ←─ HTTP/WS ───→       (source of truth
 |---|---|
 | Renderer | Godot 4.6+ (GDScript) + WorkerW wallpaper embed |
 | Daemon | Python 3.12 + FastAPI + WebSocket hub (port 8797) |
-| AI | CrewAI + Ollama (qwen3:8b default) / Claude / Gemini / OpenAI optional |
+| AI | CrewAI + Ollama (qwen3:8b default) · cloud optional: Claude/Gemini/GPT/Grok/DeepSeek |
+| Orchestration | Sub-Agent (orchestrator decompose→dispatch→synthesize) + Skills + tool-loop + permission gate |
 | Sidebar | HTML/CSS/JS + pywebview (WebView2) + pystray |
 
 ```
 godot/       Godot 4 project — wallpaper renderer (scenes, scripts, shaders, sprites)
-daemon/      Python FastAPI server — agents, task router, tools, permissions
-sidebar/     Sidebar + Terminal UI (HTML/JS served by daemon) + pywebview host
+daemon/      Python FastAPI server — agents, orchestrator, task router, skills, tools, accounts
+  ├─ services/   orchestrator_service · task_router · skill_service · account_store (DPAPI) · ...
+  ├─ skills/     สูตรทำงาน preset (.md)
+  └─ adapters/   llm_adapter (5 cloud providers) · mcp_client
+sidebar/     Sidebar + Terminal UI (HTML/JS) + pywebview host
 shell/       launcher.py — เปิด/ปิดทุก process ในคำสั่งเดียว
-tools/       wallpaper.ps1 (WorkerW attach/detach) + QA scripts
-installer/   install.ps1 (ผู้ใช้) + build.ps1/et-office.spec (build .exe)
+tools/       wallpaper.ps1 (WorkerW) + qa_m*.py (QA gates)
+installer/   install.ps1 (ผู้ใช้) + build.ps1 (build .exe)
 ```
+
+---
 
 ## ❓ ปัญหาที่เจอบ่อย
 
@@ -97,16 +158,23 @@ installer/   install.ps1 (ผู้ใช้) + build.ps1/et-office.spec (build 
 |---|---|
 | `DAEMON: OFFLINE` ค้างมุมจอ | daemon ยังไม่รัน — เปิดผ่าน shortcut/launcher เสมอ |
 | สั่งงานแล้วเงียบ | Ollama ไม่ทำงาน: เปิดแอป Ollama หรือ `ollama serve` |
+| agent ตอบเป็นแชทเฉย ไม่แตะไฟล์ | ยังไม่ตั้ง **Workspace folder** ใน Settings |
+| cloud Claude ใช้ไม่ได้ | ต้องลง `anthropic` (อยู่ใน requirements แล้ว) + ใส่ API key |
+| แตกงานเพี้ยน/ไม่แตก | ตั้ง Producer ใช้ cloud (Claude Sonnet) จะแม่นกว่า local |
 | wallpaper ไม่ฝัง / จอดำ | ดู `%APPDATA%\Godot\app_userdata\ET Office Desktop\wm_debug.txt` |
-| ภาพค้าง fps ตก | มี app fullscreen ทับอยู่ — pause by design |
-| เผลอ force kill แล้ว desktop ค้าง | คลิกขวา desktop → Refresh หรือตั้ง wallpaper ใหม่ |
 
 เพิ่มเติม: [docs/DEV-RUN-GUIDE.md §6](docs/DEV-RUN-GUIDE.md)
 
-## Status
+---
 
-🚧 อยู่ระหว่างพัฒนา — ดู [Project Board](https://github.com/users/b2cm92ts5k-alt/projects/1)
+## 📜 License
 
-## License
+**[PolyForm Noncommercial License 1.0.0](LICENSE)** + Additional Terms — สรุป:
 
-[MIT](LICENSE) — โปรเจคนี้เป็นส่วนหนึ่งของ **ETLoLz AI Build** series
+- ✅ **ใช้ฟรี + ปรับแต่ง + แจกจ่ายต่อ** (แบบไม่เชิงพาณิชย์) ได้
+- ❌ **ห้ามนำตัวโปรแกรม ET Office ไปใช้เชิงพาณิชย์** (ขาย/ให้เช่า/เสนอเป็นสินค้า-บริการ — ทั้งตัวเดิม
+  และตัวดัดแปลง)
+- ✅ **ผลงานที่คุณสร้างจากการใช้ ET Office เป็นของคุณ 100% — เอาไปขาย/ใช้เชิงพาณิชย์ได้เต็มที่**
+  (ข้อจำกัดไม่เชิงพาณิชย์บังคับกับตัวโปรแกรมเท่านั้น ไม่เกี่ยวกับสิ่งที่คุณทำด้วยมัน)
+
+โปรเจคนี้เป็นส่วนหนึ่งของ **ETLoLz AI Build** series
