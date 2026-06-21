@@ -51,6 +51,11 @@ _CHAT_SCHEMA = {
 MAX_STEPS = 10          # action สูงสุดต่อ task — กัน loop ไม่รู้จบ
 MAX_PARSE_FAILS = 2     # LLM ตอบไม่เป็น JSON กี่ครั้งถึงยอมรับเป็นคำตอบ text
 MAX_TOOL_FAILS = 3      # tool ไม่รู้จัก/โดนบล็อคติดกันกี่ครั้งถึงยอมแพ้ attempt แล้ว retry
+# M19-3 — กัน tool รั่ว: เรียก tool+args เดิมซ้ำกี่ครั้งถึงเตือน / ถึงตัดวง (เช่น web_search วน)
+SPAM_NUDGE_AT = 3
+SPAM_FAIL_AT = 5
+# M19-2 — tool ที่ถือว่า "ผลิตงานจริง" (ใช้ติดธง produced_output → verify งานหลอกเสร็จ)
+_OUTPUT_TOOLS = {"write_file", "mkdir", "move", "generate_image", "git_commit", "gh_create_issue"}
 # retry schedule ต่อ task (M11-2, §3.2): attempt1 temp ปกติ → attempt2 temp=0 + เน้น schema
 # ครบทุก attempt ยังพัง → circuit breaker: fail task + log (ไม่ retry อีก กัน agent วน loop กิน resource)
 _TASK_ATTEMPTS = ((0.2, False), (0.0, True))  # (temperature, strict_nudge)
@@ -58,6 +63,10 @@ _TASK_ATTEMPTS = ((0.2, False), (0.0, True))  # (temperature, strict_nudge)
 
 class _AttemptFailed(Exception):
     """attempt หนึ่งล้มเหลวแบบ retry ได้ (ชนเพดาน / tool พังซ้ำ) — ใช้ภายใน task_router"""
+
+
+class _Rejected(Exception):
+    """ผู้ใช้กด REJECT action (M19-1) — subtask/task ล้มทันที ไม่ retry, ไม่ปั้น final หลอกเสร็จ"""
 
 # schema หลวมสำหรับ tool-loop (M11-1, §3.1) — บังคับ output เป็น JSON object เสมอ (ตัด parse fail)
 # ไม่ใช้ oneOf/required แยกสาขา (action vs final) เพราะ grammar ของ llama.cpp ซับซ้อนขึ้น
@@ -321,6 +330,8 @@ class TaskRouter:
                 if i > 1:
                     log_service.add("task", f"retry attempt {i}/{n} สำเร็จ: {task.task_id}", agent_cfg.id)
                 return out
+            except _Rejected:
+                raise  # M19-1 — user ปฏิเสธ ไม่ retry (ปฏิเสธแล้วลองใหม่ก็โดนปฏิเสธอีก)
             except Exception as exc:  # _AttemptFailed รวมถึง LLM/network error — retry ได้
                 last = str(exc)
                 tail = "retry temp=0 + เน้น schema" if i < n else "circuit breaker — หยุด ไม่ retry อีก"
@@ -405,6 +416,8 @@ class TaskRouter:
         tool_fail_streak = 0
         final_pushback = False
         review_done = False
+        tool_calls: dict[str, int] = {}   # M19-3 — นับ signature (tool+args) ซ้ำ กัน tool รั่ว
+        produced_output = False           # M19-2 — มี action ที่ผลิตงานจริงไหม (verify หลอกเสร็จ)
         for _step in range(MAX_STEPS):
             # ส่งเฉพาะ window (system + งานเดิม + สรุป + N turn ล่าสุด) — กัน context บวมจน quality ร่วง
             sent = self._compact_messages(messages, budget["keep_turns"], summary_state, summarize_fn)
@@ -457,6 +470,8 @@ class TaskRouter:
                         messages.append({"role": "user", "content":
                             "Reviewer พบปัญหา ให้แก้แล้วส่ง final ใหม่:\n- " + "\n- ".join(issues)})
                         continue
+                if metrics is not None:
+                    metrics["produced_output"] = produced_output   # M19-2 — verify หลอกเสร็จ
                 return final_text
 
             action = data.get("action") or {}
@@ -472,20 +487,31 @@ class TaskRouter:
                 tool_fail_streak += 1
                 observation = f"ไม่รู้จัก tool '{tool}' — ที่มี: {', '.join(TOOLS_SPEC)}"
             else:
+                # M19-3 — กัน tool รั่ว: เรียก tool+args เดิมซ้ำเกินกำหนด → เตือน/ตัดวง (เช่น web_search วน)
+                sig = tool + "|" + json.dumps(args, ensure_ascii=False, sort_keys=True)[:300]
+                tool_calls[sig] = tool_calls.get(sig, 0) + 1
+                if tool_calls[sig] >= SPAM_FAIL_AT:
+                    raise _AttemptFailed(f"เรียก '{tool}' ซ้ำ {tool_calls[sig]} ครั้งไม่คืบหน้า — ตัดวง")
                 summary = f"MCP เรียก {tool}" if is_mcp else summarize(tool, args)
                 detail = json.dumps(args, ensure_ascii=False)[:2000]
                 approved = permission_gate.request(
                     task.task_id, agent_cfg.id, agent_cfg.name, tool, summary, detail)
-                if approved:
-                    try:
-                        observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args, agent_cfg)
-                        actions_done += 1
-                        tool_fail_streak = 0  # สำเร็จ → รีเซ็ต streak
-                    except WorkspaceError as exc:
-                        tool_fail_streak += 1
-                        observation = f"โดนบล็อค: {exc}"
-                else:
-                    observation = "ผู้ใช้ปฏิเสธ action นี้ — ปรับแผน หรือสรุปงานเท่าที่ทำได้"
+                if not approved:
+                    # M19-1 — REJECT = ล้มทันที ไม่ปั้น final หลอกเสร็จ (ก่อนหน้านี้บอก "สรุปเท่าที่ทำได้")
+                    raise _Rejected(f"ผู้ใช้ปฏิเสธ: {summary}")
+                try:
+                    observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args, agent_cfg)
+                    actions_done += 1
+                    tool_fail_streak = 0  # สำเร็จ → รีเซ็ต streak
+                    if tool in _OUTPUT_TOOLS:
+                        produced_output = True   # M19-2 — ผลิตงานจริง
+                except WorkspaceError as exc:
+                    tool_fail_streak += 1
+                    observation = f"โดนบล็อค: {exc}"
+                # M19-3 — เรียกซ้ำถึงเกณฑ์เตือน → แทรก nudge แรงให้เปลี่ยนวิธี/สรุป
+                if tool_calls[sig] >= SPAM_NUDGE_AT:
+                    observation += (f"\n\n‼️ คุณเรียก '{tool}' ด้วย args เดิมซ้ำ {tool_calls[sig]} ครั้งแล้ว "
+                                    "ไม่คืบหน้า — เปลี่ยนวิธี/เครื่องมือ หรือสรุป final ได้แล้ว")
 
             # tool พัง/ไม่รู้จักติดกันหลายครั้ง = model หลง — ยอมแพ้ attempt นี้ให้ retry (M11-2)
             if tool_fail_streak >= MAX_TOOL_FAILS:

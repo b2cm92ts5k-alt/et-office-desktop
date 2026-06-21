@@ -40,6 +40,15 @@ PLAN_SCHEMA = {
 }
 
 
+def _expects_file(subtask: str) -> bool:
+    """เดาว่า subtask นี้ควรผลิตไฟล์งานจริงไหม (M19-2 verify) — เจาะจงพอไม่ให้ false positive
+    กับงานวิเคราะห์/คุยล้วน. ใช้คู่กับ produced_output flag จาก tool-loop"""
+    s = subtask.lower()
+    kws = ("เขียนไฟล์", "สร้างไฟล์", "เขียนโค้ด", "เขียนเอกสาร", "สร้างเอกสาร", "บันทึกไฟล์",
+           "code", "script", "สคริปต์", ".py", ".md", ".cs", ".gd", "gdd", "main.py", "เกม")
+    return any(k in s for k in kws)
+
+
 def _parse_plan(raw: str) -> list[dict]:
     """ดึง plan จากคำตอบ LLM แบบทนทาน (fix 2026-06-21) — รองรับหลายรูปแบบที่ model มักตอบ:
     {"plan":[...]}, array เปล่า [...], หรือ object เดี่ยว {"role","subtask"} → คืน [{role,subtask}]
@@ -133,22 +142,34 @@ class OrchestratorService:
         return []
 
     def _synthesize(self, message: str, results: list[tuple], producer: AgentConfig, metrics: dict) -> str:
-        """รวมผล subtask ทั้งหมด → คำตอบสุดท้ายให้ CEO"""
-        if len(results) == 1:
-            return results[0][2]   # งานเดี่ยว ไม่ต้องเรียบเรียงซ้ำ
-        body = "\n\n".join(f"[{a.name} ({a.role})] {sub}\n→ {out}" for a, sub, out in results)
-        sys = ("คุณคือ Producer สรุปผลงานที่ลูกทีมทำเสร็จให้ CEO ฟังแบบกระชับ เป็นระเบียบ "
-               "บอกว่าได้อะไรบ้าง/เหลืออะไร ภาษาไทย /no_think")
+        """รวมผล subtask → คำตอบสุดท้ายให้ CEO (M19-2: header สถานะคำนวณจากโค้ด ไม่ให้ LLM หลอกว่าเสร็จ)"""
+        done = sum(1 for *_, st in results if st == "done")
+        bad = [r for r in results if r[3] != "done"]
+        # header ความจริง — ไม่พึ่ง LLM (กัน Producer สรุปว่า "เสร็จ" ทั้งที่มีขั้นล้ม/ข้าม)
+        icons = {"done": "✅", "failed": "❌", "skipped": "⏭️", "incomplete": "⚠️"}
+        header = ""
+        if bad:
+            header = f"⚠️ งานยังไม่ครบ — สำเร็จ {done}/{len(results)} ขั้น\n" + "\n".join(
+                f"{icons.get(st, '•')} {a.name}: {str(sub)[:60]}" for a, sub, _o, st in results) + "\n\n"
+        if len(results) == 1 and not bad:
+            return results[0][2]   # งานเดี่ยวสำเร็จ — ไม่ต้องเรียบเรียงซ้ำ
+        body = "\n\n".join(f"[{a.name} ({a.role}) · {st}] {sub}\n→ {out}" for a, sub, out, st in results)
+        rule = ("ถ้ามีขั้นที่ ❌/⏭️/⚠️ ห้ามบอกว่า 'เสร็จสมบูรณ์' — บอกตามจริงว่าได้อะไร ขาด/ติดอะไร "
+                if bad else "")
+        sys = ("คุณคือ Producer สรุปผลงานลูกทีมให้ CEO กระชับ เป็นระเบียบ บอกว่าได้อะไร/เหลืออะไร. "
+               + rule + "ภาษาไทย /no_think")
         messages = [{"role": "system", "content": sys},
                     {"role": "user", "content": f"คำสั่งเดิม: {message}\n\nผลงานลูกทีม:\n{body}"}]
         from ..adapters.llm_adapter import get_llm, ollama_chat
         from .cost_guard import cost_guard
         try:
             if producer.llm.provider == "ollama" or cost_guard.over_budget():
-                return ollama_chat(messages, temperature=0.4, stats=metrics, think=False)
-            return str(get_llm(producer.llm, temperature=0.4).call(messages))
+                summary = ollama_chat(messages, temperature=0.4, stats=metrics, think=False)
+            else:
+                summary = str(get_llm(producer.llm, temperature=0.4).call(messages))
         except Exception:  # noqa: BLE001 — สรุปไม่ได้ → ส่งผลดิบรวมกัน
-            return body
+            summary = body
+        return header + summary   # header (ความจริง) นำหน้าเสมอเมื่อมีขั้นไม่สำเร็จ
 
     def run(self, task: TaskLog, producer: AgentConfig, metrics: dict, loop) -> str:
         """แตกงาน → มอบหมาย → รวมผล (sync, เรียกจาก _execute ผ่าน to_thread)"""
@@ -168,10 +189,16 @@ class OrchestratorService:
         log_service.add("task", f"orchestrate: {producer.name} แตกเป็น {len(plan)} งาน", producer.id)
         emit("orchestrate.plan", {"steps": [{"role": s["role"], "subtask": s["subtask"]} for s in plan]})
 
+        from .task_router import _Rejected
         results: list[tuple] = []
+        stopped = False   # M19-1 — มีขั้นถูก REJECT → ข้ามขั้นที่เหลือ (มักพึ่งกันตามลำดับ)
         for i, step in enumerate(plan, 1):
             agent = self._pick_agent(step["role"], step["subtask"])
             if agent is None:
+                continue
+            if stopped:   # ขั้นก่อนหน้าถูกปฏิเสธ → ไม่ทำต่อ (กัน Tester เทสของที่ไม่มี)
+                results.append((agent, step["subtask"], "⏭️ ข้าม — ขั้นก่อนหน้าถูกปฏิเสธ", "skipped"))
+                log_service.add("task", f"  {i}/{len(plan)} ข้าม {agent.name} (ขั้นก่อนถูกปฏิเสธ)", agent.id)
                 continue
             emit("orchestrate.subtask", {"index": i, "total": len(plan),
                                          "agent_id": agent.id, "agent": agent.name, "subtask": step["subtask"]})
@@ -179,16 +206,31 @@ class OrchestratorService:
             emit("agent.status", {"agent_id": agent.id, "status": "working"})
             log_service.add("task", f"  {i}/{len(plan)} → {agent.name}: {step['subtask'][:80]}", agent.id)
             sub = TaskLog(message=step["subtask"], agent_id=agent.id, agent_name=agent.name)
+            sub_m: dict = {}
+            status = "done"
             try:
-                out = task_router.run_sync(sub, agent, metrics)
-            except Exception as exc:  # noqa: BLE001 — subtask พัง → จดแล้วไปต่อ (ทีมไม่ล้มทั้งงาน)
-                out = f"(ทำไม่สำเร็จ: {str(exc)[:100]})"
+                out = task_router.run_sync(sub, agent, sub_m)
+                # M19-2 verify — งานที่ควรสร้างไฟล์ แต่ไม่มี output จริง → ถือว่าไม่ครบ (กันหลอกเสร็จ)
+                if sub_m.get("produced_output") is False and _expects_file(step["subtask"]):
+                    status = "incomplete"
+                    out = f"⚠️ อ้างว่าเสร็จแต่ไม่มีไฟล์งานเกิดขึ้นจริง:\n{out}"
+            except _Rejected:
+                out = "❌ ถูกปฏิเสธโดยผู้ใช้"
+                status = "failed"
+                stopped = True
+                log_service.add("error", f"subtask {i} โดย {agent.name} ถูกปฏิเสธ → หยุดขั้นที่เหลือ", agent.id)
+            except Exception as exc:  # noqa: BLE001 — subtask พัง → จดแล้วไปต่อ (อาจเป็นงานอิสระ)
+                out = f"❌ ทำไม่สำเร็จ: {str(exc)[:100]}"
+                status = "failed"
                 log_service.add("error", f"subtask {i} โดย {agent.name} ล้มเหลว: {str(exc)[:100]}", agent.id)
             finally:
                 permission_gate.finish_task(sub.task_id)
-            results.append((agent, step["subtask"], out))
+                for k in ("tokens_in", "tokens_out", "llm_calls", "cache_hits"):  # รวม token เข้างานหลัก
+                    if sub_m.get(k):
+                        metrics[k] = metrics.get(k, 0) + sub_m[k]
+            results.append((agent, step["subtask"], out, status))
             emit("agent.status", {"agent_id": agent.id, "status": "idle"})
-            emit("orchestrate.subtask.done", {"index": i, "agent_id": agent.id})
+            emit("orchestrate.subtask.done", {"index": i, "agent_id": agent.id, "status": status})
 
         return self._synthesize(task.message, results, producer, metrics)
 
