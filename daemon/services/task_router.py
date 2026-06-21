@@ -231,6 +231,30 @@ class TaskRouter:
         asyncio.create_task(self._execute(task, agent_cfg, orchestrate))
         return task
 
+    async def continue_orchestration(self, task_id: str) -> TaskLog:
+        """M21-2 — "▶️ ทำต่อ": รันเฉพาะขั้นที่ค้างของงาน orchestration เดิม (ไม่ทำซ้ำขั้นที่ done)
+
+        raise KeyError ถ้าไม่มี state เดิม (เช่น รีสตาร์ท/เก่าเกิน), ValueError ถ้าครบทุกขั้นแล้ว.
+        """
+        from .orchestration_store import orchestration_store
+        state = orchestration_store.get(task_id)
+        if not state:
+            raise KeyError(task_id)
+        if not any(s.get("status") != "done" for s in state.get("steps", [])):
+            raise ValueError("ทุกขั้นเสร็จแล้ว ไม่มีอะไรต้องทำต่อ")
+        producer = self._default_agent(self._workers())   # Producer = orchestrator lead (เหมือนงานแตก)
+        task = TaskLog(message=state["message"], agent_id=producer.id, agent_name=producer.name)
+        log_service.save_task(task)
+        log_service.add("task", f"continue → {producer.name}: {state['message'][:120]}", producer.id)
+        await ws_manager.broadcast({
+            "type": "task.routing",
+            "data": {"task_id": task.task_id, "agent_id": producer.id, "agent": producer.name,
+                     "message": state["message"], "orchestrate": True, "continued": True,
+                     "model": producer.llm.model, "provider": producer.llm.provider},
+        })
+        asyncio.create_task(self._execute(task, producer, continue_from=task_id))
+        return task
+
     def _workers(self) -> list[AgentConfig]:
         """agent ที่รับงานได้จริง — กัน CEO ออก (CEO สั่งงาน ไม่ลงมือเอง, M13-8).
         เครื่องเปล่ามีแต่ CEO → ยอมคืน CEO กันระบบค้าง (ไม่มีใครรับงาน)"""
@@ -278,7 +302,8 @@ class TaskRouter:
             "cache_hits": m.get("cache_hits", 0),
         }
 
-    async def _execute(self, task: TaskLog, agent_cfg: AgentConfig, orchestrate: bool = False) -> None:
+    async def _execute(self, task: TaskLog, agent_cfg: AgentConfig, orchestrate: bool = False,
+                       continue_from: str | None = None) -> None:
         await self._set_status(agent_cfg.id, "working")
         task.status = "working"
         log_service.save_task(task)
@@ -286,7 +311,13 @@ class TaskRouter:
         metrics: dict = {}
         started = time.monotonic()
         try:
-            if orchestrate:
+            if continue_from:
+                # M21-2: ทำต่อจากงานเดิม — รันเฉพาะขั้นที่ค้าง (reuse orchestrator dispatch)
+                from .orchestrator_service import orchestrator_service
+                loop = asyncio.get_running_loop()
+                output = await asyncio.to_thread(
+                    orchestrator_service.continue_run, task, agent_cfg, continue_from, metrics, loop)
+            elif orchestrate:
                 # M15-5: Producer แตกงาน→มอบหมาย→รวมผล (subtask รัน tool-loop เดิม + permission gate)
                 from .orchestrator_service import orchestrator_service
                 loop = asyncio.get_running_loop()

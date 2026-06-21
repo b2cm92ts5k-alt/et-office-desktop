@@ -195,6 +195,27 @@ async function submitTask() {
   }
 }
 
+/* M21-2 — ปุ่ม "▶️ ทำต่อ" (inline style เพื่อใช้ได้ทั้ง 2 หน้าต่างโดยไม่พึ่ง CSS ภายนอก) */
+function contBtn(taskId) {
+  return `<button class="cont-btn" onclick="continueTask('${esc(taskId)}', this)" ` +
+    `style="background:transparent;border:1px solid var(--cyan,#00e5ff);color:var(--cyan,#00e5ff);` +
+    `font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:4px">▶️ ทำต่อขั้นที่ค้าง</button>`;
+}
+
+async function continueTask(taskId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ กำลังทำต่อ…"; }
+  try {
+    const res = await fetch(BASE + "/tasks/" + encodeURIComponent(taskId) + "/continue", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok)
+      feedLine("route", `▶️ ทำต่อจากเดิม — มอบให้ <b>${esc(data.agent || "ทีม")}</b> (รันเฉพาะขั้นที่ค้าง)`);
+    else
+      feedLine("error", `ทำต่อไม่ได้: ${esc(data.detail || res.status)}`);
+  } catch {
+    feedLine("error", "ทำต่อไม่ได้ — daemon เปิดอยู่ไหม?");
+  }
+}
+
 /* QA hook — host.py --qa-task ส่ง query param มาที่หน้าต่างนี้ */
 function qaSubmit(text) {
   document.getElementById("task-input").value = text;
@@ -250,6 +271,10 @@ function handleEvent(ev) {
       break;
     case "task.failed":
       feedLine("error", `✘ ${esc(nameOf(d.agent_id))}: ${esc(trim(d.error, 200))}`);
+      break;
+    case "orchestrate.result":   // M21-2 — มีขั้นค้าง → ปุ่ม "▶️ ทำต่อ" รันเฉพาะที่ยังไม่เสร็จ
+      if (d.pending > 0)
+        feedLine("route", `⚠️ งานยังไม่ครบ ${d.done}/${d.total} ขั้น (ค้าง ${d.pending}) ` + contBtn(d.task_id));
       break;
     case "social.meetup":
       feedLine("social", `☕ ${esc((d.names || []).join(" × "))} จับคู่คุยกัน`);

@@ -47,6 +47,7 @@ var _sleep_visual := false
 var _bunk_level: int = 0          # 0 = เตียงล่าง, 1 = เตียงบน (top bunk) — ยกภาพ + z สูงกว่า
 var _vis_raise: float = 0.0       # ระยะยกภาพปัจจุบัน (px) เฉพาะตอนหลับบนเตียงบน
 var _facing: int = Facing.SE
+var _look_next_ms: int = 0       # M22-2 — look-around: หันหน้าสุ่มตอน idle (ดูมีชีวิต ไม่จ้องทางเดียว)
 var _anim: String = "stand"
 var _anim_frame: float = 0.0
 var _total_rows: int = 4         # จำนวนแถวจริงในแผ่น (192x192→4, 192x528→11)
@@ -129,6 +130,10 @@ func say(text: String) -> void:
 	_hud.say(text)
 
 
+func emote(icon: String, seconds: float = 1.8) -> void:
+	_hud.emote(icon, seconds)   # M22-1 — emote ไอคอนเร็วเหนือหัว (reaction/micro-behavior)
+
+
 func _set_sleep_visual(on: bool) -> void:
 	# ใช้ตอนถึง dorm แล้วเท่านั้น — ระหว่างเดินยังตัวสว่างปกติ
 	if _sleep_visual == on:
@@ -193,7 +198,21 @@ func _process(delta: float) -> void:
 	elif status == "sleep" and not _sleep_visual:
 		_set_sleep_visual(true)
 
+	_look_around()   # M22-2 — หันหน้าสุ่มตอน idle (ใช้เฟรม idle/walk ที่มีอยู่ ไม่ต้อง asset ใหม่)
 	_advance_anim(delta)
+
+
+func _look_around() -> void:
+	# idle อยู่กับที่ (ไม่เดิน/ไม่หลับ) → เปลี่ยน facing เป็นระยะ ทำให้ดูเหมือนมองรอบ ๆ
+	if status != "idle" or not _path.is_empty() or _sleep_visual:
+		_look_next_ms = 0   # ออกจาก idle → เริ่มจับเวลาใหม่ตอนกลับมา
+		return
+	var now := Time.get_ticks_msec()
+	if _look_next_ms == 0:
+		_look_next_ms = now + randi_range(2500, 6000)
+	elif now >= _look_next_ms:
+		_look_next_ms = now + randi_range(2500, 6000)
+		_facing = [Facing.SE, Facing.SW, Facing.NE, Facing.NW].pick_random()
 
 
 func _set_facing_from(diff: Vector2) -> void:

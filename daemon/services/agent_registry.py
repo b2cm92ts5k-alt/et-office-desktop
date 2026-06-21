@@ -27,11 +27,16 @@ class AgentRegistry:
         if REGISTRY_PATH.exists():
             raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
             self._agents = {a["id"]: AgentConfig(**a) for a in raw}
+        # status เป็น runtime state (idle/working/…) ไม่ใช่ค่าตั้งค่า — daemon เพิ่งบูต = ยังไม่มีงานรัน
+        # → reset เป็น idle เสมอ กัน status ค้าง (เช่น working/sleep) จาก session ก่อนที่ปิดไม่สะอาด/ถูก kill
+        for a in self._agents.values():
+            a.status = "idle"
         if not self._agents:
             self._seed_from_presets()
 
     def _save(self) -> None:
-        data = [a.model_dump() for a in self._agents.values()]
+        # ไม่ persist `status` (runtime state) — กันค้างข้าม restart ถ้าบังเอิญ _save ตอน agent ยัง working/sleep
+        data = [a.model_dump(exclude={"status"}) for a in self._agents.values()]
         REGISTRY_PATH.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
