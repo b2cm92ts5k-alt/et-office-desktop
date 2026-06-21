@@ -33,11 +33,16 @@ def main() -> int:
     check("output_kind: generate_image สำเร็จ → image", ok("generate_image", {}, "สร้างรูปแล้ว 1 ไฟล์") == "image")
     check("output_kind: generate_image ล้ม → None", ok("generate_image", {}, "สร้างรูปไม่สำเร็จ") is None)
 
-    # 2) _expected_kind (M20-2)
-    check("expected: 'วาดภาพตัวละคร' → image", O._expected_kind("วาดภาพตัวละครหลัก") == "image")
-    check("expected: 'สร้างเสียงเดิน' → audio", O._expected_kind("สร้างเสียงเดิน sound") == "audio")
-    check("expected: 'เขียนโค้ดเกม' → code", O._expected_kind("เขียนโค้ดเกม PlayerMovement") == "code")
-    check("expected: 'ออกแบบ GDD' → None (ไม่บังคับ)", O._expected_kind("ออกแบบ GDD โครงเรื่อง") is None)
+    # 2) _expected_kind (M20-2) — ดู role เป็นหลัก (แก้เคส LLM เขียน subtask หลากหลาย)
+    art = AgentConfig(name="ET Artist", role="Game Artist / Animator")
+    snd = AgentConfig(name="ET Sound Designer", role="Sound Designer")
+    dev = AgentConfig(name="ET Developer", role="Game Developer")
+    dsg = AgentConfig(name="ET Game Designer", role="Game Designer")
+    # เคสจริงที่เคยหลุด: Artist subtask ไม่มีคำว่า "วาด" แต่ต้องรู้ว่าต้องได้ภาพ
+    check("expected(role artist): 'สร้างสเก็ตช์และโมเดล 3D' → image", O._expected_kind(art, "สร้างสเก็ตช์และโมเดล 3D ของตัวละคร") == "image")
+    check("expected(role sound): 'ออกแบบเสียงพื้นหลัง' → audio", O._expected_kind(snd, "ออกแบบเสียงพื้นหลัง") == "audio")
+    check("expected(role dev): 'พัฒนาระบบควบคุม' → code", O._expected_kind(dev, "พัฒนาระบบควบคุมการเคลื่อนที่") == "code")
+    check("expected(role designer): 'ออกแบบตัวละคร' → None (เอกสาร ไม่บังคับภาพ)", O._expected_kind(dsg, "ออกแบบตัวละครและระบบเกม") is None)
 
     # 3) shared context (M20-1) มีเป้าหมายเดิม + งานคนก่อน
     ctx = O._subtask_context('สร้างเกม mario', ["ET Designer (done): ออกแบบ → ได้ GDD"])

@@ -69,16 +69,23 @@ def _subtask_context(goal: str, prior: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-# M20-2 — ชนิดผลงานที่ subtask "ควรได้" (จับจาก keyword) → ใช้ verify กับ produced_kinds จาก tool-loop
-def _expected_kind(subtask: str) -> str | None:
-    s = subtask.lower()
-    if any(k in s for k in ("เสียง", "sound", "เพลง", "music", "sfx", "ดนตรี", ".wav")):
-        return "audio"
-    if any(k in s for k in ("วาด", "สร้างภาพ", "สร้างรูป", "ภาพประกอบ", "sprite", "สเปรต",
-                            "กราฟิก", "artwork", "วาดรูป")):
+# M20-2 — ชนิดผลงานที่ subtask "ควรได้" → ใช้ verify กับ produced_kinds จาก tool-loop
+# ดู role ของ agent เป็นหลัก (แม่นกว่าเดาจากข้อความ subtask ที่ LLM เขียนหลากหลาย เช่น
+# "สร้างสเก็ตช์/โมเดล 3D" ที่ไม่ match "วาด") — Artist=ต้องได้ภาพเสมอ, Sound=เสียง, Dev=code
+def _expected_kind(agent, subtask: str) -> str | None:
+    role = (getattr(agent, "role", "") + " " + " ".join(getattr(agent, "keywords", []) or [])).lower()
+    if any(k in role for k in ("artist", "animator", "ศิลป", "วาด", "กราฟิก", "illustrat", "pixel", "ภาพ")):
         return "image"
-    if any(k in s for k in ("โค้ด", "code", "script", "สคริปต์", "เขียนโปรแกรม", "พัฒนาเกม",
-                            "develop", ".cs", ".py", ".gd")):
+    if any(k in role for k in ("sound", "audio", "เสียง", "music", "ดนตรี", "composer")):
+        return "audio"
+    if any(k in role for k in ("developer", "coder", "programmer", "engineer", "โปรแกรม", "วิศวกร", "เขียนโค้ด")):
+        return "code"
+    s = subtask.lower()   # fallback: ข้อความ subtask ระบุชนิดชัด (เผื่อ role กว้าง)
+    if any(k in s for k in ("เสียง", "sound", ".wav", "เพลง")):
+        return "audio"
+    if any(k in s for k in ("วาดรูป", "สร้างภาพ", "สเก็ตช์", "sketch", ".png", "sprite", "artwork")):
+        return "image"
+    if any(k in s for k in (".cs", ".py", ".gd", "เขียนโค้ด", "script", "สคริปต์")):
         return "code"
     return None   # design/research/test/doc → ไม่บังคับชนิด
 
@@ -256,8 +263,8 @@ class OrchestratorService:
             status = "done"
             try:
                 out = task_router.run_sync(sub, agent, sub_m)
-                # M20-2 verify ตามชนิดงาน — งานภาพต้องได้ไฟล์ภาพ, เสียงต้องได้เสียง, code ต้องได้โค้ด
-                exp = _expected_kind(step["subtask"])
+                # M20-2 verify ตามชนิดงาน (ดู role) — Artist ต้องได้ไฟล์ภาพ, Sound เสียง, Dev code
+                exp = _expected_kind(agent, step["subtask"])
                 kinds = set(sub_m.get("produced_kinds") or [])
                 if exp and exp not in kinds:
                     status = "incomplete"
