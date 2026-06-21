@@ -55,12 +55,15 @@
 - ระวัง: บน wallpaper ห้ามกิน GPU/CPU เกิน (30fps cap เดิม) — micro-anim ต้องเบา
 - bubble คุยเล่นเยอะ = ยิง local LLM บ่อย → ต้องคุมความถี่ + cache (กันเครื่องร้อน, เคารพ 1-active-local)
 
-## 5. คำถามให้ CEO เคาะ (ตอนมาทำจริง)
-1. โฟกัสก้อนไหนก่อน? (แนะนำ **B bubble/emote** เห็นผลชัดเร็วสุด + **A idle** ทำให้ไม่นิ่ง)
-2. บุคลิกต่อ agent (C) — อยากกำหนดเองในไฟล์ role หรือให้ระบบสุ่ม/มี preset?
-3. ความถี่คุยเล่น — เน้น "มีชีวิตตลอด" (ถี่) หรือ "ไม่รบกวน" (นาน ๆ ที)? (มี SOCIAL LOOP setting คุมได้)
-4. คุยเล่นใช้ local model เท่านั้นใช่ไหม (กัน cloud quota) — ค่า default ที่ตกลง
-5. มี personality/asset เพิ่ม (sprite อารมณ์, emote sheet) ที่อยากให้ทำไหม หรือใช้ของที่มี
+## 5. คำถามให้ CEO เคาะ — ✅ **เคาะแล้ว (2026-06-21)**
+1. **โฟกัสก้อนไหนก่อน?** → **B bubble/emote + A idle** (ทำรอบนี้); C chat++ และ D ambient เลื่อนไปรอบหน้า
+2. **บุคลิกต่อ agent (C)** → **ในไฟล์ role .md + มี preset default** (เพิ่ม field `personality` ใน role schema ตอนทำ C; ไม่เขียน=ใช้ preset ตาม role) — *ยังไม่ทำรอบนี้ (อยู่ใน C)*
+3. **ความถี่** → **ปานกลาง ปรับได้** (default พอประมาณ + คุมค่าได้; Godot constant `MICRO_CHANCE`/`PEER_REACT_CHANCE` ปรับที่เดียว)
+4. **คุยเล่นใช้ local model เท่านั้น** → ใช่ (default ที่ตกลง, ฟรี ไม่กิน cloud quota) — เกี่ยวกับ C
+5. **asset อารมณ์** → **ใช้ของที่มี + emote เป็นไอคอน/ข้อความ** (emoji ใน bubble/label, reuse FX flipbooks + bubble 9-patch) ไม่วาด sprite สีหน้าใหม่
+
+> **ขอบเขตรอบนี้ (2026-06-21):** ทำ **M22-1 (bubble/emote engine)** + **M22-2 (idle micro-behaviors)** ฝั่ง Godot ล้วน
+> **เลื่อน:** M22-3 (Chat++ personality, แตะ daemon), M22-4 (Ambient), M22-5 (QA วัด GPU จริง — ต้องรันแอป)
 
 ## 6. แตกงาน (ร่าง — ปรับตอนทำ)
 | # | งาน |

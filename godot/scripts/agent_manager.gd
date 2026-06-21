@@ -50,6 +50,14 @@ const ROAM_SPOTS: Array[Vector2i] = [
 	Vector2i(3, 4), Vector2i(5, 6),
 ]
 
+# M22-1/2 — emote reactions ต่อ event + idle micro-behaviors (ปรับความถี่ที่นี่ที่เดียว)
+# ความถี่ "ปานกลาง ปรับได้" ตามที่ CEO เคาะ — กลางคืนเนือยลง (MICRO_NIGHT_FACTOR)
+const MICRO_CHECK_SEC := 7.0
+const MICRO_CHANCE := 0.22          # โอกาสต่อ agent idle ต่อ tick (กลางวัน)
+const MICRO_NIGHT_FACTOR := 0.3
+const PEER_REACT_CHANCE := 0.5      # เพื่อนทำงานเสร็จ → idle ตัวอื่นรีแอค 👍
+const MICRO_EMOTES: Array[String] = ["☕", "🙆", "👀", "⌨️", "🤔", "🎵"]
+
 # map ชื่อ role (จาก daemon registry) → sprite key (ชื่อไฟล์ char_<key>.png)
 const ROLE_SPRITES := {
 	"producer": "producer", "project manager": "producer",
@@ -104,6 +112,13 @@ func _ready() -> void:
 	roam_timer.timeout.connect(_roam_tick)
 	add_child(roam_timer)
 	roam_timer.start()
+
+	# M22-2 — idle micro-behaviors: agent ว่างทำท่าเล็ก ๆ (กาแฟ/ยืด/มอง) เป็น emote เหนือหัว
+	var micro_timer := Timer.new()
+	micro_timer.wait_time = MICRO_CHECK_SEC
+	micro_timer.timeout.connect(_micro_tick)
+	add_child(micro_timer)
+	micro_timer.start()
 
 
 func _fetch_agents() -> void:
@@ -207,18 +222,27 @@ func _on_event(event: Dictionary) -> void:
 		"task.routing":
 			_say(data, "รับงาน: " + str(data.get("message", "")))
 		"task.completed":
+			var cid := str(data.get("agent_id", ""))
 			_say(data, str(data.get("output", "")))
-			_fx_at(str(data.get("agent_id", "")), "fx_done")
-			_flash_screen(str(data.get("agent_id", "")), "done")
+			_fx_at(cid, "fx_done")
+			_flash_screen(cid, "done")
+			_emote_at(cid, "🎉")          # M22-1 — รีแอคงานเสร็จ
+			_peer_react(cid, "👍")        # M22-1 — เพื่อน idle ปรบมือให้
 		"task.failed":
+			var fid := str(data.get("agent_id", ""))
 			_say(data, "ล้มเหลว: " + str(data.get("error", "")))
-			_fx_at(str(data.get("agent_id", "")), "fx_error")
-			_flash_screen(str(data.get("agent_id", "")), "error")
+			_fx_at(fid, "fx_error")
+			_flash_screen(fid, "error")
+			_emote_at(fid, "😵")          # M22-1
+		"orchestrate.subtask":  # M22-1 — โดนมอบงานในแผน → รีแอค ⚡ (พร้อมลงมือ)
+			_emote_at(str(data.get("agent_id", "")), "⚡")
 		"image.generated":  # M17-7 — ET Artist วาดเสร็จ (ดูรูปจริงที่ sidebar; ในจอโชว์ bubble+flash)
+			var iid := str(data.get("agent_id", ""))
 			var imgn: int = (data.get("paths", []) as Array).size()
 			_say(data, "🎨 วาดเสร็จ %d รูป: %s" % [imgn, str(data.get("prompt", ""))])
-			_fx_at(str(data.get("agent_id", "")), "fx_done")
-			_flash_screen(str(data.get("agent_id", "")), "done")
+			_fx_at(iid, "fx_done")
+			_flash_screen(iid, "done")
+			_emote_at(iid, "🎨")          # M22-1
 		"social.chat":
 			_say(data, str(data.get("text", "")))
 		"agent.chat":
@@ -228,6 +252,7 @@ func _on_event(event: Dictionary) -> void:
 			if not by.is_empty():
 				_say({"agent_id": by[0]}, "💡 เสนอไอเดีย: " + str(data.get("title", "")))
 				_fx_at(str(by[0]), "fx_proposal")
+				_emote_at(str(by[0]), "💡")   # M22-1
 		"qa.dump":
 			_dump_positions()  # QA gate M3-12 อ่าน snapshot นี้ไปตรวจ
 		"agent.deleted":
@@ -278,6 +303,43 @@ func _flash_screen(agent_id: String, kind: String) -> void:
 	# M3-7 — แฟลช done/error บนจอ desk ของ agent
 	if _screens.has(agent_id):
 		_screens[agent_id].flash(kind)
+
+
+# --- M22-1/2 — emote reactions + idle micro-behaviors -------------------
+
+func _emote_at(agent_id: String, icon: String, seconds: float = 1.8) -> void:
+	# emote ไอคอนเร็วเหนือหัว agent ที่ระบุ (เงียบถ้าไม่พบตัว)
+	var sprite: AgentSprite = _agents.get(agent_id)
+	if sprite != null:
+		sprite.emote(icon, seconds)
+
+
+func _peer_react(doer_id: String, icon: String) -> void:
+	# เพื่อนทำงานเสร็จ → idle ตัวอื่น 1 ตัวรีแอคให้ (โอกาสปานกลาง — ไม่รก, ดูเป็นทีม)
+	if randf() >= PEER_REACT_CHANCE:
+		return
+	var idles: Array = []
+	for id: String in _agents:
+		if id == doer_id or _ceo_ids.has(id):
+			continue
+		var s: AgentSprite = _agents[id]
+		if s.status == "idle" and not s.is_walking():
+			idles.append(id)
+	if not idles.is_empty():
+		_emote_at(idles.pick_random(), icon, 1.6)
+
+
+func _micro_tick() -> void:
+	# agent ที่ idle อยู่กับที่ (ไม่ใช่ CEO) สุ่มทำท่าเล็ก ๆ เป็น emote — กลางคืนเนือยลง
+	var chance := MICRO_CHANCE * (MICRO_NIGHT_FACTOR if _is_night() else 1.0)
+	for id: String in _agents:
+		if _ceo_ids.has(id):
+			continue
+		var sprite: AgentSprite = _agents[id]
+		if sprite.status != "idle" or sprite.is_walking():
+			continue
+		if randf() < chance:
+			_emote_at(id, MICRO_EMOTES.pick_random())
 
 
 func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -> void:
