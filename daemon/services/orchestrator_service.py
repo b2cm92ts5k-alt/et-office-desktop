@@ -40,6 +40,49 @@ PLAN_SCHEMA = {
 }
 
 
+def _workspace_files(limit: int = 40) -> list[str]:
+    """ลิสต์ไฟล์ใน workspace (relative) ให้ subtask เห็นงานที่ทีมทำไว้ (M20-1 กันทำซ้ำ/หลงประเด็น)"""
+    try:
+        from .tool_executor import workspace_root
+        root = workspace_root()
+    except Exception:  # noqa: BLE001 — ไม่มี workspace → ไม่มี context ไฟล์
+        return []
+    out = []
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and ".git" not in p.parts:
+            out.append(p.relative_to(root).as_posix())
+            if len(out) >= limit:
+                break
+    return out
+
+
+def _subtask_context(goal: str, prior: list[str]) -> str:
+    """บริบทให้ subtask (M20-1): เป้าหมายเดิมของ CEO + ไฟล์ที่มี + งานที่ทีมทำไปแล้ว
+    → กัน output generic, ทำซ้ำ, ลืมโจทย์ (เช่นสั่ง mario แต่ได้เกมทั่วไป)"""
+    parts = [f'เป้าหมายรวมที่ CEO สั่ง: "{goal}"  (งานย่อยของคุณต้องสอดคล้องกับเป้าหมายนี้)']
+    files = _workspace_files()
+    if files:
+        parts.append("ไฟล์ในโปรเจกต์ตอนนี้ (อ่าน/ต่อยอดได้ — อย่าสร้างซ้ำของที่มีแล้ว):\n"
+                     + "\n".join("- " + f for f in files))
+    if prior:
+        parts.append("ทีมทำมาแล้ว:\n" + "\n".join("- " + p for p in prior))
+    return "\n\n".join(parts)
+
+
+# M20-2 — ชนิดผลงานที่ subtask "ควรได้" (จับจาก keyword) → ใช้ verify กับ produced_kinds จาก tool-loop
+def _expected_kind(subtask: str) -> str | None:
+    s = subtask.lower()
+    if any(k in s for k in ("เสียง", "sound", "เพลง", "music", "sfx", "ดนตรี", ".wav")):
+        return "audio"
+    if any(k in s for k in ("วาด", "สร้างภาพ", "สร้างรูป", "ภาพประกอบ", "sprite", "สเปรต",
+                            "กราฟิก", "artwork", "วาดรูป")):
+        return "image"
+    if any(k in s for k in ("โค้ด", "code", "script", "สคริปต์", "เขียนโปรแกรม", "พัฒนาเกม",
+                            "develop", ".cs", ".py", ".gd")):
+        return "code"
+    return None   # design/research/test/doc → ไม่บังคับชนิด
+
+
 def _expects_file(subtask: str) -> bool:
     """เดาว่า subtask นี้ควรผลิตไฟล์งานจริงไหม (M19-2 verify) — เจาะจงพอไม่ให้ false positive
     กับงานวิเคราะห์/คุยล้วน. ใช้คู่กับ produced_output flag จาก tool-loop"""
@@ -191,6 +234,7 @@ class OrchestratorService:
 
         from .task_router import _Rejected
         results: list[tuple] = []
+        prior: list[str] = []   # M20-1 — สรุปงานที่ทีมทำไปแล้ว ส่งเป็น context ให้ขั้นถัดไป
         stopped = False   # M19-1 — มีขั้นถูก REJECT → ข้ามขั้นที่เหลือ (มักพึ่งกันตามลำดับ)
         for i, step in enumerate(plan, 1):
             agent = self._pick_agent(step["role"], step["subtask"])
@@ -205,13 +249,21 @@ class OrchestratorService:
             # agent.status → Godot/sidebar reuse handler เดิม: sub-agent สว่าง/ทำงานทีละตัว (M15-7)
             emit("agent.status", {"agent_id": agent.id, "status": "working"})
             log_service.add("task", f"  {i}/{len(plan)} → {agent.name}: {step['subtask'][:80]}", agent.id)
-            sub = TaskLog(message=step["subtask"], agent_id=agent.id, agent_name=agent.name)
+            # M20-1 — แนบ context (เป้าหมายเดิม + ไฟล์ที่มี + งานคนก่อน) ให้ subtask ไม่ generic/ทำซ้ำ
+            sub_msg = _subtask_context(task.message, prior) + "\n\nงานย่อยของคุณ: " + step["subtask"]
+            sub = TaskLog(message=sub_msg, agent_id=agent.id, agent_name=agent.name)
             sub_m: dict = {}
             status = "done"
             try:
                 out = task_router.run_sync(sub, agent, sub_m)
-                # M19-2 verify — งานที่ควรสร้างไฟล์ แต่ไม่มี output จริง → ถือว่าไม่ครบ (กันหลอกเสร็จ)
-                if sub_m.get("produced_output") is False and _expects_file(step["subtask"]):
+                # M20-2 verify ตามชนิดงาน — งานภาพต้องได้ไฟล์ภาพ, เสียงต้องได้เสียง, code ต้องได้โค้ด
+                exp = _expected_kind(step["subtask"])
+                kinds = set(sub_m.get("produced_kinds") or [])
+                if exp and exp not in kinds:
+                    status = "incomplete"
+                    out = f"⚠️ ควรได้ไฟล์ '{exp}' แต่ไม่มี (ได้: {', '.join(sorted(kinds)) or 'ไม่มีไฟล์'}):\n{out}"
+                # M19-2 verify — งานที่ควรสร้างไฟล์ แต่ไม่มี output จริง → ไม่ครบ (กันหลอกเสร็จ)
+                elif sub_m.get("produced_output") is False and _expects_file(step["subtask"]):
                     status = "incomplete"
                     out = f"⚠️ อ้างว่าเสร็จแต่ไม่มีไฟล์งานเกิดขึ้นจริง:\n{out}"
             except _Rejected:
@@ -229,6 +281,7 @@ class OrchestratorService:
                     if sub_m.get(k):
                         metrics[k] = metrics.get(k, 0) + sub_m[k]
             results.append((agent, step["subtask"], out, status))
+            prior.append(f"{agent.name} ({status}): {step['subtask'][:50]} → {str(out)[:80]}")  # M20-1
             emit("agent.status", {"agent_id": agent.id, "status": "idle"})
             emit("orchestrate.subtask.done", {"index": i, "agent_id": agent.id, "status": status})
 

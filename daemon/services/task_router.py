@@ -54,8 +54,6 @@ MAX_TOOL_FAILS = 3      # tool ไม่รู้จัก/โดนบล็อ
 # M19-3 — กัน tool รั่ว: เรียก tool+args เดิมซ้ำกี่ครั้งถึงเตือน / ถึงตัดวง (เช่น web_search วน)
 SPAM_NUDGE_AT = 3
 SPAM_FAIL_AT = 5
-# M19-2 — tool ที่ถือว่า "ผลิตงานจริง" (ใช้ติดธง produced_output → verify งานหลอกเสร็จ)
-_OUTPUT_TOOLS = {"write_file", "mkdir", "move", "generate_image", "git_commit", "gh_create_issue"}
 # retry schedule ต่อ task (M11-2, §3.2): attempt1 temp ปกติ → attempt2 temp=0 + เน้น schema
 # ครบทุก attempt ยังพัง → circuit breaker: fail task + log (ไม่ retry อีก กัน agent วน loop กิน resource)
 _TASK_ATTEMPTS = ((0.2, False), (0.0, True))  # (temperature, strict_nudge)
@@ -67,6 +65,29 @@ class _AttemptFailed(Exception):
 
 class _Rejected(Exception):
     """ผู้ใช้กด REJECT action (M19-1) — subtask/task ล้มทันที ไม่ retry, ไม่ปั้น final หลอกเสร็จ"""
+
+
+# M20-2 — แยกชนิดไฟล์ที่ action ผลิตจริง (verify ตามชนิดงาน: ภาพต้องได้ภาพ ไม่ใช่ .md)
+_EXT_KIND = {
+    "png": "image", "jpg": "image", "jpeg": "image", "webp": "image", "gif": "image", "bmp": "image",
+    "wav": "audio", "mp3": "audio", "ogg": "audio", "flac": "audio", "aac": "audio",
+    "mp4": "video", "webm": "video", "mov": "video",
+    "cs": "code", "py": "code", "gd": "code", "js": "code", "ts": "code", "cpp": "code",
+    "c": "code", "java": "code", "lua": "code", "shader": "code", "gdshader": "code",
+}
+
+
+def _output_kind(tool: str, args: dict, observation: str) -> str | None:
+    """ชนิดผลงานที่ action นี้สร้างจริง — None ถ้าไม่ได้ผลิตไฟล์ (M20-2)"""
+    if tool == "generate_image":
+        return "image" if observation.startswith("สร้างรูปแล้ว") else None  # ล้ม=ไม่นับ
+    if tool in ("write_file", "move"):
+        path = str(args.get("path") or args.get("dst") or "").lower()
+        ext = path.rsplit(".", 1)[-1] if "." in path else ""
+        return _EXT_KIND.get(ext, "file")   # .md/.txt/อื่น = doc/file
+    if tool == "mkdir":
+        return "file"
+    return None
 
 # schema หลวมสำหรับ tool-loop (M11-1, §3.1) — บังคับ output เป็น JSON object เสมอ (ตัด parse fail)
 # ไม่ใช้ oneOf/required แยกสาขา (action vs final) เพราะ grammar ของ llama.cpp ซับซ้อนขึ้น
@@ -133,9 +154,12 @@ _LOOP_PROMPT = """{system_prompt}
 
 กติกา:
 - path ใช้แบบ relative ใต้ workspace เท่านั้น เช่น "docs/plan.md"
-- ทุก action ต้องรอผู้ใช้อนุญาต — ถ้าโดนปฏิเสธ ให้ปรับแผนหรือสรุปเท่าที่ทำได้
+- ทุก action ต้องรอผู้ใช้อนุญาต (ถ้าโดนปฏิเสธ งานนี้จะถูกยกเลิก)
 - ห้ามตอบ final ว่า "ทำแล้ว" ถ้ายังไม่มี OBSERVATION ยืนยันว่า action สำเร็จจริง
 - เฉพาะคำถามคุยเฉย ๆ ที่ไม่ต้องแตะไฟล์/รันคำสั่ง ถึงตอบ final ได้ทันที
+- เก็บไฟล์ให้ถูกที่: โค้ดใน scripts/ · ภาพ/เสียง(asset) ใน assets/ · เอกสาร/ดีไซน์ ใน design/  (M20)
+- ถ้าเครื่องมือสร้างสื่อ (เช่น generate_image) ล้มเพราะ key/ไม่พร้อม หรือคุณสร้างไฟล์เสียงเองไม่ได้
+  อย่าเรียกซ้ำหรือ web_search วน — ให้เขียน "สเปค/แผน" เป็นไฟล์ .md แทน แล้วสรุปว่ายังขาดไฟล์จริง (M20)
 
 ตัวอย่าง: ผู้ใช้สั่ง "สร้างไฟล์ a.txt เนื้อหา hi"
 คุณ:   {{"thought": "ต้องเขียนไฟล์", "action": {{"tool": "write_file", "args": {{"path": "a.txt", "content": "hi"}}}}}}
@@ -418,6 +442,7 @@ class TaskRouter:
         review_done = False
         tool_calls: dict[str, int] = {}   # M19-3 — นับ signature (tool+args) ซ้ำ กัน tool รั่ว
         produced_output = False           # M19-2 — มี action ที่ผลิตงานจริงไหม (verify หลอกเสร็จ)
+        produced_kinds: set[str] = set()  # M20-2 — ชนิดไฟล์ที่สร้างจริง (image/audio/code/file)
         for _step in range(MAX_STEPS):
             # ส่งเฉพาะ window (system + งานเดิม + สรุป + N turn ล่าสุด) — กัน context บวมจน quality ร่วง
             sent = self._compact_messages(messages, budget["keep_turns"], summary_state, summarize_fn)
@@ -471,7 +496,8 @@ class TaskRouter:
                             "Reviewer พบปัญหา ให้แก้แล้วส่ง final ใหม่:\n- " + "\n- ".join(issues)})
                         continue
                 if metrics is not None:
-                    metrics["produced_output"] = produced_output   # M19-2 — verify หลอกเสร็จ
+                    metrics["produced_output"] = produced_output       # M19-2 — verify หลอกเสร็จ
+                    metrics["produced_kinds"] = sorted(produced_kinds)  # M20-2 — verify ตามชนิดงาน
                 return final_text
 
             action = data.get("action") or {}
@@ -503,8 +529,10 @@ class TaskRouter:
                     observation = mcp_service.call(tool, args) if is_mcp else execute(tool, args, agent_cfg)
                     actions_done += 1
                     tool_fail_streak = 0  # สำเร็จ → รีเซ็ต streak
-                    if tool in _OUTPUT_TOOLS:
-                        produced_output = True   # M19-2 — ผลิตงานจริง
+                    kind = None if is_mcp else _output_kind(tool, args, observation)
+                    if kind:
+                        produced_output = True            # M19-2 — ผลิตงานจริง
+                        produced_kinds.add(kind)          # M20-2 — ชนิดไฟล์ (verify ตามชนิดงาน)
                 except WorkspaceError as exc:
                     tool_fail_streak += 1
                     observation = f"โดนบล็อค: {exc}"
