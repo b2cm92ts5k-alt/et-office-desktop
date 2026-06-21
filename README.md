@@ -2,12 +2,17 @@
 
 > 🏢 Cyberpunk Synthwave isometric **AI agent office** — รันเป็น **live desktop wallpaper** บน Windows
 > ทีม AI ทำงานเป็นทีมจริง (Sub-Agent): หัวหน้าแตกงาน → มอบหมายลูกทีม → รวมผล
-> ขับเคลื่อนด้วย **Ollama + Qwen** (local, ฟรี 100%) — เสริม cloud ได้ 5 เจ้า (Claude/Gemini/GPT/Grok/DeepSeek)
+>
+> 🟢 **Local First** — ทำงานได้ **100% ฟรีบนเครื่องคุณ** ด้วย **Ollama + Qwen** (ไม่ต้องต่อเน็ต ไม่ต้องจ่าย
+> ไม่ส่งข้อมูลออก) · cloud (Claude/Gemini/GPT/Grok/DeepSeek/OpenRouter/GitHub Models) เป็น **ของเสริม opt-in**
+> เฉพาะ agent ที่อยากได้คุณภาพ/ความเร็วสูงขึ้น
+
+**เวอร์ชันปัจจุบัน: `v0.20.0`** — M20 (Orchestration Quality)
 
 AI Agent ทีมงานเดินทำงาน ประชุม คุยกันเอง อยู่หลัง desktop icon ของคุณ — **สั่งงานได้จริง**:
 สั่งหนึ่งคำสั่ง → **Producer แตกงานเป็นขั้น แล้วกระจายให้ specialist ทำต่อกัน** → สร้าง/แก้ไฟล์,
-รันคำสั่ง, ค้นเว็บ ใน workspace ของคุณ โดย**ทุก action ต้องขออนุญาตคุณก่อนเสมอ** — ข้อมูลไม่ออก
-นอกเครื่อง ไม่ต้องจ่าย subscription
+รันคำสั่ง, ค้นเว็บ, **สร้างภาพ** ใน workspace ของคุณ โดย**ทุก action ต้องขออนุญาตคุณก่อนเสมอ** —
+ข้อมูลไม่ออกนอกเครื่อง ไม่ต้องจ่าย subscription
 
 <!-- TODO: screenshot Golden Neon + demo GIF -->
 
@@ -15,26 +20,33 @@ AI Agent ทีมงานเดินทำงาน ประชุม คุ
 
 ## ✨ Features
 
+- 🟢 **Local First (ฟรี 100%)** — default รันด้วย Ollama + Qwen บนเครื่องคุณ ไม่ต้องมี key/เน็ต/ค่าใช้จ่าย
 - 🤝 **ทำงานเป็นทีมจริง (Sub-Agent / Orchestrator)** — สั่งงานทั่วไป → Producer แตกงานเป็น subtask
   อัตโนมัติ → มอบหมายให้ specialist ตาม role → รวมผลเป็นคำตอบเดียว (ดู agent สว่างทีละตัวในออฟฟิศ)
+- ✅ **รายงานตามจริง (ไม่หลอกว่าเสร็จ)** — กด REJECT = หยุดจริง + ข้ามขั้นที่พึ่งกัน · งานที่ควรได้ไฟล์
+  (ภาพ/เสียง/โค้ด) แต่ไม่มี = สรุปว่า "ยังไม่ครบ" ไม่ปั้นว่าเสร็จ
+- 🎨 **สร้างภาพได้ (ET Artist)** — tool `generate_image` (Nano Banana ฟรี / Imagen / gpt-image / DALL·E) —
+  **เลือก image model แยกจากสมอง agent ได้**
 - 🧠 **Skills** — สูตรทำงานทีละขั้นที่ inject ให้ agent อัตโนมัติเมื่องานตรง (วิจัย/เขียนโค้ด/วางแผน/
   จัดไฟล์/ทำเกมเล็ก) — ทำให้ model local เก่งขึ้นโดยไม่ต้องพึ่ง cloud
+- 🎯 **Role Tool Presets** — จ้าง agent ตาม role → tool ที่ควรใช้ถูกติ๊กให้อัตโนมัติ (ไม่ต้องนั่งติ๊กเอง)
 - 🖥️ **Live wallpaper จริง** — ฝังใต้ desktop icon (WorkerW), pause อัตโนมัติเมื่อเปิดเกม fullscreen
 - ⌨️ **Terminal สั่งงานภาษาไทย** — สั่งทีม / เลือกผู้รับตรง / คุยเล่นกับ agent ได้
 - 📁 **Agent Workforce + Tools** — ไฟล์ (สร้าง/อ่าน/แก้/ย้าย/ลบ), PowerShell, **web_search**, fetch_url,
-  Git, GitHub issues — sandbox ใต้ workspace + **permission gate ทุก action**
-- ☁️ **Cloud per-agent (optional)** — เลือก model + บัญชี key ต่อ agent (Claude/Gemini/GPT/Grok/DeepSeek);
-  API key เก็บ **เข้ารหัส DPAPI** ในเครื่อง
+  generate_image, Git, GitHub issues — sandbox ใต้ workspace + **permission gate ทุก action**
+- ☁️ **Cloud per-agent (optional)** — 1 API key เลือก model ได้ **ครบทุกตัวที่ key เปิดให้** (ไม่ฟิกแค่ไม่กี่ตัว);
+  รองรับ **7 เจ้า**: Claude · Gemini · OpenAI · Grok · DeepSeek · **OpenRouter** · **GitHub Models** —
+  key เก็บ **เข้ารหัส DPAPI** ในเครื่อง
 - 🧑‍💼 **Hire/Fire + Roles** — จ้าง agent ด้วยไฟล์ role `.md` (หรือให้ AI ร่าง) / ไล่ออกได้
 - 🌆 **บรรยากาศตามเวลาจริง** — Dawn Boot / Cyber Day / Golden Neon / Deep Night
-- 🔒 **Privacy first** — default รัน local ทั้งหมด (Ollama); secret อยู่แค่ในเครื่อง ไม่ log/ไม่ส่งออก
+- 🔒 **Privacy first** — secret อยู่แค่ในเครื่อง ไม่ log/ไม่ส่งออก
 
 ---
 
 ## 📦 ติดตั้ง (ผู้ใช้ทั่วไป)
 
 ความต้องการ: **Windows 10/11** + GPU (แนะนำ VRAM 6GB+ สำหรับ qwen3:8b — น้อยกว่านี้ installer
-เลือก model เล็กให้อัตโนมัติ)
+เลือก model เล็กให้อัตโนมัติ) · **ไม่ต้องมี API key** ก็ใช้งานได้เต็มที่ (local)
 
 1. ดาวน์โหลด zip จาก [Releases](../../releases) แล้วแตกไฟล์
 2. คลิกขวา `install.ps1` → **Run with PowerShell**
@@ -51,13 +63,11 @@ AI Agent ทีมงานเดินทำงาน ประชุม คุ
 ### 1) สั่งงานทีม — Sub-Agent / Orchestrator
 หัวใจของ ET Office: พิมพ์คำสั่งใน **ET Terminal** (ไม่ต้องเลือกผู้รับ) ระบบจะ:
 1. **Producer แตกงาน** เป็นขั้น ๆ + เลือก specialist ที่เหมาะ (เห็นใน feed: `👥 แตกงานเป็น N ขั้น`)
-2. **ลูกทีมลงมือทีละคน** (เห็น `→ [1/N] ชื่อ agent: งานย่อย` + agent สว่างในออฟฟิศ)
-3. **รวมผลเป็นคำตอบเดียว** ให้คุณ
+2. **ลูกทีมลงมือทีละคน** — แต่ละขั้นเห็นเป้าหมายเดิม + งานที่คนก่อนทำ (ไม่ทำซ้ำ/หลงโจทย์)
+3. **รวมผลเป็นคำตอบเดียว** + สรุปตามจริงว่าได้/ขาดอะไร
 
 > 💡 ตัวอย่าง: *"ค้นข้อมูลคู่แข่ง 3 เจ้า แล้วทำเอกสารสรุป + ร่างแผนการตลาด"* → Researcher ค้น →
 > Producer สรุป → ทีมร่างแผน
-> 💡 อยากให้แตกงานแม่นขึ้น: ตั้ง Producer ให้ใช้ **cloud (Claude Sonnet)** ที่ ⚙ (qwen3 local พอได้
-> แต่งานซับซ้อนอาจแตกเพี้ยน)
 
 **สั่งคนเดียว / คุยเล่น:** ในเทอร์มินอลเลือกผู้รับ (agent เจาะจง) = ทำเดี่ยวไม่แตกงาน · ปุ่ม 💬 คุยเล่น
 = สนทนาเฉย ๆ (ถ้าขอให้ทำงานจริงจะ escalate เป็น task ให้)
@@ -65,38 +75,52 @@ AI Agent ทีมงานเดินทำงาน ประชุม คุ
 ### 2) Workspace + Tools + Permission
 ก่อนทีมทำงานกับไฟล์ได้ ต้องตั้ง **Workspace folder** ก่อน (Sidebar → Settings):
 - agent ทำได้เฉพาะ **ใต้โฟลเดอร์ workspace** (sandbox — ออกนอกไม่ได้)
-- **ทุก action เด้ง dialog ขออนุญาต** → Approve / Deny / "อนุมัติที่เหลือทั้ง task นี้"
+- **ทุก action เด้ง dialog ขออนุญาต** → Approve / Deny / "อนุมัติที่เหลือทั้ง task นี้" · **Deny = ขั้นนั้นยกเลิกจริง**
 - Tools: `list_dir` `read_file` `write_file` `mkdir` `move` `delete` `powershell` `web_search`
-  `fetch_url` `git_*` `gh_*`
-- จำกัด tool ต่อ agent ได้ที่ ⚙ → ติ๊กเฉพาะที่อนุญาต (**ไม่ติ๊ก = อนุญาตทุก tool**)
+  `fetch_url` `generate_image` `git_*` `gh_*`
+- จำกัด tool ต่อ agent ได้ที่ ⚙ → ติ๊กเฉพาะที่อนุญาต (**ไม่ติ๊ก = อนุญาตทุก tool**) · ปุ่ม
+  **🎯 ใช้ tool ตาม role** ติ๊กชุดที่เหมาะให้อัตโนมัติ
 
 ### 3) Skills (สูตรทำงาน)
 Sidebar → Settings → **SKILLS** — เปิด/ปิด/ดูสูตรได้ สกิลจะ inject ให้ agent อัตโนมัติเมื่องานตรงคีย์เวิร์ด
 (เช่น "ค้นข้อมูล...รายงาน" → สูตร research-and-report) สกิลในตัว: research-and-report, build-feature,
 write-plan, organize-files, small-game-team · เพิ่มเองได้ที่ `daemon/data/skills/*.md`
 
-### 4) Cloud API Keys + เลือก model ต่อ agent
-- Sidebar → Settings → **API KEYS** → เลือก provider (Claude/Gemini/GPT/Grok/DeepSeek) + วาง key →
-  ADD (validate + เก็บ **เข้ารหัส DPAPI**) · ใส่ใน `.env` ก็ได้ (ดู `.env.example`)
-- ที่ ⚙ ของ agent: เลือก **Model** ก่อน → เลือก **Key/บัญชี** (จากชื่อที่ตั้งไว้)
-- ⚠️ **ใช้ได้เฉพาะ API key** — ค่าสมาชิกแชต (ChatGPT Plus / Gemini Advanced / Claude Pro / SuperGrok)
-  เอามายิงจากแอปไม่ได้ (ผิด ToS ของผู้ให้บริการ) ต้องใช้ developer API key เท่านั้น
+### 4) Cloud API Keys + เลือก model ต่อ agent (optional)
+- Sidebar → Settings → **API KEYS** → เลือก provider (Claude/Gemini/OpenAI/Grok/DeepSeek/**OpenRouter**/
+  **GitHub Models**) + วาง key → ADD (validate + เก็บ **เข้ารหัส DPAPI**) · ใส่ใน `.env` ก็ได้
+- **1 key เห็น model ครบทุกตัวที่ key เปิดให้** (ดึงจริงจาก provider) — กดปุ่ม 🔄 รีเฟรชเมื่อ provider ออกรุ่นใหม่
+- ที่ ⚙ ของ agent: เลือก **Model** (แสดงชื่อ model อย่างเดียว) → เลือก **Key/บัญชี**
+- ⚠️ **ใช้ได้เฉพาะ developer API key** — ค่าสมาชิกแชต (ChatGPT Plus / Gemini Advanced / Claude Pro /
+  SuperGrok) เอามายิงจากแอปไม่ได้ (ผิด ToS)
 - web_search: ฟรี (DuckDuckGo) — ใส่ `BRAVE_API_KEY` ถ้าอยากแม่นขึ้น
 
-### 5) Model Manager (local)
+### 5) เลือก model ให้เหมาะกับหน้าที่ของ agent 🎯
+**หลัก Local First:** เริ่มจาก local (ฟรี) ทุกตัวก่อน แล้ว**อัปเฉพาะ agent ที่ต้องการคุณภาพ/ความเร็ว**เป็น cloud
+
+| Agent / หน้าที่ | แนะนำ |
+|---|---|
+| **Producer** (วางแผน/แตกงาน) | งานหนักสุดทางความคิด — local `qwen3:8b`+ พอได้งานง่าย; งานซับซ้อนอยากแม่น → cloud (Claude Sonnet / GPT / Gemini Pro) |
+| **Developer / Coder** | `qwen2.5-coder` (local) หรือ cloud coding model |
+| **Researcher** | local + `web_search` (ฟรี) หรือ Gemini Flash (เร็ว+ถูก) |
+| **Designer / Writer** | local ทั่วไปพอ; อยากได้คุณภาพภาษา → cloud |
+| **Artist (ภาพ)** | สมองเป็น local/cloud ก็ได้ + ตั้ง **image model** แยก (Nano Banana ฟรี / Imagen / gpt-image) |
+| **Tester / Sound Designer** | local พอ (Sound เขียนสเปคเสียง — ยังไม่มีโมเดลสร้างไฟล์เสียงในตัว) |
+
+> 💡 Cloud ฟรีแบบมีโควต้า: **Gemini** (Google AI Studio) + **GitHub Models** ใช้ฟรีมีลิมิตต่อวัน ·
+> Claude/OpenAI/Grok/DeepSeek = จ่ายตามใช้ · OpenRouter = มีทั้งฟรีและจ่าย
+
+### 6) Model Manager (local)
 Sidebar → Settings → **LOCAL MODELS** — ติดตั้ง/สลับ local model (ผ่าน Ollama) · กฎ: ใช้ local
 **ตัวเดียวทั้งทีม** ในแต่ละครั้ง (กันโหลดหลายตัวจน VRAM ล้น) — สลับได้ผ่านปุ่ม "สลับมาใช้"
 
-### 6) Hire / Fire / Roles
+### 7) Hire / Fire / Roles
 Sidebar → Agent list → **+ Hire** — แนบไฟล์ role `.md` (upload หรือเขียนในแอป) หรือให้ AI ร่างให้ →
-ผูก system prompt + keywords · ไล่ออกด้วยปุ่ม ✕ (CEO ไล่ไม่ได้)
+ผูก system prompt + keywords (tool ถูกติ๊กตาม role ให้อัตโนมัติ) · ไล่ออกด้วยปุ่ม ✕ (CEO ไล่ไม่ได้)
 
-### 7) GitHub (optional)
-Settings → ผูก **GitHub token** (fine-grained) + ตั้ง repo → agent ใช้ `gh_*` (issue) + `git_*`
-(commit/push) ได้ — ทุกอย่างผ่าน permission gate
-
-### 8) MCP servers (optional)
-Settings → เพิ่ม MCP server (stdio) → tool ของ server โผล่ให้ agent ใช้ (namespaced `mcp__srv__tool`)
+### 8) GitHub / MCP (optional)
+- **GitHub:** Settings → ผูก token (fine-grained) + repo → agent ใช้ `gh_*` (issue) + `git_*` (commit/push)
+- **MCP:** Settings → เพิ่ม MCP server (stdio) → tool ของ server โผล่ให้ agent ใช้ (`mcp__srv__tool`)
 
 ### 9) บรรยากาศ / wallpaper
 Settings → Atmosphere picker (Dawn/Day/Golden/Night) · wallpaper แสดงบนจอหลักเท่านั้น · pause เองเมื่อ
@@ -119,7 +143,8 @@ winget install GodotEngine.GodotEngine   # Godot 4.6+
 รันทั้งระบบ: ดับเบิลคลิก **`et-office.cmd`** (หรือ `--window` ให้ Godot เป็นหน้าต่างปกติ)
 รายละเอียด workflow (รันแยกส่วน, จูนภาพ, QA gates, troubleshooting): **[docs/DEV-RUN-GUIDE.md](docs/DEV-RUN-GUIDE.md)**
 
-QA แต่ละ milestone: `python tools/qa_m11.py` … `qa_m15.py` · Build แจกจ่าย: `installer\build.ps1` → `dist\ET-Office\`
+QA แต่ละ milestone: `python daemon/qa_m16.py` … `qa_m20.py` · Build แจกจ่าย: `installer\build.ps1` → `dist\ET-Office\`
+ดีไซน์รายฟีเจอร์: `docs/M16-DESIGN.md` … `M22-DESIGN.md`
 
 ---
 
@@ -134,19 +159,19 @@ Sidebar UI (webview2)         ←─ HTTP/WS ───→       (source of truth
 |---|---|
 | Renderer | Godot 4.6+ (GDScript) + WorkerW wallpaper embed |
 | Daemon | Python 3.12 + FastAPI + WebSocket hub (port 8797) |
-| AI | CrewAI + Ollama (qwen3:8b default) · cloud optional: Claude/Gemini/GPT/Grok/DeepSeek |
-| Orchestration | Sub-Agent (orchestrator decompose→dispatch→synthesize) + Skills + tool-loop + permission gate |
+| AI | CrewAI + Ollama (qwen3:8b default) · cloud optional: 7 providers (dynamic per-key model list) |
+| Orchestration | Sub-Agent (decompose→dispatch→synthesize) + shared context + per-kind verify + Skills + permission gate |
 | Sidebar | HTML/CSS/JS + pywebview (WebView2) + pystray |
 
 ```
 godot/       Godot 4 project — wallpaper renderer (scenes, scripts, shaders, sprites)
 daemon/      Python FastAPI server — agents, orchestrator, task router, skills, tools, accounts
   ├─ services/   orchestrator_service · task_router · skill_service · account_store (DPAPI) · ...
-  ├─ skills/     สูตรทำงาน preset (.md)
-  └─ adapters/   llm_adapter (5 cloud providers) · mcp_client
+  ├─ adapters/   llm_adapter (provider registry) · image_adapter (generate_image) · mcp_client
+  └─ data/       skills/*.md · agents.json · accounts (encrypted)
 sidebar/     Sidebar + Terminal UI (HTML/JS) + pywebview host
 shell/       launcher.py — เปิด/ปิดทุก process ในคำสั่งเดียว
-tools/       wallpaper.ps1 (WorkerW) + qa_m*.py (QA gates)
+tools/       wallpaper.ps1 (WorkerW)
 installer/   install.ps1 (ผู้ใช้) + build.ps1 (build .exe)
 ```
 
@@ -159,7 +184,7 @@ installer/   install.ps1 (ผู้ใช้) + build.ps1 (build .exe)
 | `DAEMON: OFFLINE` ค้างมุมจอ | daemon ยังไม่รัน — เปิดผ่าน shortcut/launcher เสมอ |
 | สั่งงานแล้วเงียบ | Ollama ไม่ทำงาน: เปิดแอป Ollama หรือ `ollama serve` |
 | agent ตอบเป็นแชทเฉย ไม่แตะไฟล์ | ยังไม่ตั้ง **Workspace folder** ใน Settings |
-| cloud Claude ใช้ไม่ได้ | ต้องลง `anthropic` (อยู่ใน requirements แล้ว) + ใส่ API key |
+| cloud คืน 429 / 403 | key หมดโควต้า/ถูกระงับ — สลับ key/provider หรือใช้ local (qwen3:8b ฟรี) |
 | แตกงานเพี้ยน/ไม่แตก | ตั้ง Producer ใช้ cloud (Claude Sonnet) จะแม่นกว่า local |
 | wallpaper ไม่ฝัง / จอดำ | ดู `%APPDATA%\Godot\app_userdata\ET Office Desktop\wm_debug.txt` |
 

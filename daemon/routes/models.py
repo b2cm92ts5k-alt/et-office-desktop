@@ -182,10 +182,9 @@ def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
     cat = {m["model"]: m for m in cloud_models(prov)}   # overlay metadata
 
     def _opt(mid: str, mi: dict | None, c: dict | None) -> dict:
-        # ⭐ นำหน้าตัวที่ curated (แนะนำ) — รวมในกลุ่ม Cloud เดียว ไม่แยก section แล้ว (M16-10)
+        # M21 (CEO): โชว์ชื่อ model อย่างเดียว — ไม่มี ⭐/🟢/ฟรี*/💰/ราคา (เลิกรก)
         base = (c["label"] if c else (mi or {}).get("label")) or mid
-        label = f"{'⭐ ' if c else ''}{base} · {_price_tag(prov, c, mi)}"
-        return {"provider": prov, "model": mid, "account_id": "", "label": label,
+        return {"provider": prov, "model": mid, "account_id": "", "label": base,
                 "recommended": False, "curated": bool(c), "kind": "chat"}
 
     if seen:  # มี cache จริง = source of truth (โชว์เท่าที่ key เปิดให้ ไม่ยัด catalog ที่ key อาจไม่มี)
@@ -194,7 +193,7 @@ def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
         out = [_opt(mid, None, c) for mid, c in cat.items()]
     else:      # ไม่มีทั้ง cache+catalog → default ตัวเดียว
         dm = DEFAULT_CLOUD_MODELS.get(prov)
-        out = [{"provider": prov, "model": dm, "account_id": "", "label": f"☁ {prov} ({dm})",
+        out = [{"provider": prov, "model": dm, "account_id": "", "label": dm,
                 "recommended": False, "curated": False, "kind": "chat"}] if dm else []
 
     if include_all:  # M16-7 "แสดงทั้งหมด" — แนบ model เฉพาะทาง (non-chat) แบบเลือกไม่ได้
@@ -206,7 +205,7 @@ def _cloud_model_opts(prov: str, include_all: bool = False) -> list[dict]:
                     spec[mid] = mi
         for mid, mi in spec.items():
             out.append({"provider": prov, "model": mid, "account_id": "",
-                        "label": f"🧩 {mi.get('label') or mid} · {mi.get('kind')}",
+                        "label": mi.get("label") or mid,   # M21 — ชื่ออย่างเดียว
                         "recommended": False, "curated": False,
                         "kind": mi.get("kind"), "selectable": False})
     return out

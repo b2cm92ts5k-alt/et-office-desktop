@@ -989,12 +989,12 @@ async function loadAvailableModels(force, all) {
   }
 }
 
-// M16-10 — Cloud รวมกลุ่มเดียว (ไม่แยก section "แนะนำ"); ตัว ⭐ curated เรียงขึ้นก่อนในกลุ่ม
-// non-chat (เลือกไม่ได้) แยกกลุ่ม disabled. ป้ายฟรี/เสียเงินอยู่ในข้อความ label จาก backend
+// M21 (CEO): โชว์ชื่อ model อย่างเดียว — เหลือ header กลุ่มแบบ plain (ไม่มีสัญลักษณ์/ป้ายราคา)
+// curated เรียงขึ้นก่อนในกลุ่ม Cloud (ไม่มีดาวให้เห็น) · non-chat แยกกลุ่ม disabled
 const _MODEL_GROUPS = [
-  { label: "🖥 Local (ใช้ร่วมทั้งทีม)", match: o => o.provider === "ollama" },
-  { label: "☁ Cloud (มี API key)",      match: o => o.provider !== "ollama" && o.selectable !== false },
-  { label: "🧩 เฉพาะทาง (เลือกเป็นสมองไม่ได้)", match: o => o.selectable === false },
+  { label: "Local", match: o => o.provider === "ollama" },
+  { label: "Cloud", match: o => o.provider !== "ollama" && o.selectable !== false },
+  { label: "เฉพาะทาง (เลือกไม่ได้)", match: o => o.selectable === false },
 ];
 
 function fillModelSelect(sel, opts, current) {

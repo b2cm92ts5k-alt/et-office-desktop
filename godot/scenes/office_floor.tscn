@@ -71,7 +71,7 @@ offset_right = 600.0
 offset_bottom = 1070.0
 theme_override_colors/font_color = Color(0.878431, 0.25098, 0.984314, 0.5)
 theme_override_font_sizes/font_size = 14
-text = "ET OFFICE v0.1 — M2 placeholder build"
+text = "ET OFFICE v0.20 — Local-First AI Office"
 
 [node name="DaemonStatus" type="Label" parent="HudLayer"]
 offset_left = 16.0
