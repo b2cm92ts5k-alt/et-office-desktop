@@ -375,6 +375,18 @@ async function respondProposal(id, action) {
   loadProposals();
 }
 
+/* M21-2 — "▶️ ทำต่อ" งาน orchestration ที่มีขั้นค้าง (รันเฉพาะที่ยังไม่เสร็จ) */
+async function continueTask(taskId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "⏳…"; }
+  try {
+    const res = await fetch(BASE + "/tasks/" + encodeURIComponent(taskId) + "/continue", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    feedLine(res.ok ? "route" : "error",
+      res.ok ? `▶️ ทำต่อ — มอบให้ <b>${esc(data.agent || "ทีม")}</b> (เฉพาะขั้นที่ค้าง)`
+             : `ทำต่อไม่ได้: ${esc(data.detail || res.status)}`);
+  } catch { feedLine("error", "ทำต่อไม่ได้ — daemon เปิดอยู่ไหม?"); }
+}
+
 /* ---------- settings (M4-6) ---------- */
 
 let settingsOpen = false;
@@ -1407,6 +1419,13 @@ function handleEvent(ev) {
       break;
     case "orchestrate.subtask.done":
       setPill(d.agent_id, "idle");
+      break;
+    case "orchestrate.result":   // M21-2 — มีขั้นค้าง → ปุ่ม "▶️ ทำต่อ"
+      if (d.pending > 0)
+        feedLine("route", `⚠️ ค้าง ${d.pending}/${d.total} ขั้น ` +
+          `<button onclick="continueTask('${esc(d.task_id)}', this)" ` +
+          `style="background:transparent;border:1px solid var(--cyan);color:var(--cyan);` +
+          `font-size:11px;padding:1px 6px;border-radius:4px;cursor:pointer">▶️ ทำต่อ</button>`);
       break;
     case "social.meetup":
       feedLine("social", `☕ ${esc((d.names || []).join(" × "))} จับคู่คุยกัน`);

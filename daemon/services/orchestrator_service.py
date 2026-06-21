@@ -221,27 +221,22 @@ class OrchestratorService:
             summary = body
         return header + summary   # header (ความจริง) นำหน้าเสมอเมื่อมีขั้นไม่สำเร็จ
 
-    def run(self, task: TaskLog, producer: AgentConfig, metrics: dict, loop) -> str:
-        """แตกงาน → มอบหมาย → รวมผล (sync, เรียกจาก _execute ผ่าน to_thread)"""
+    def _dispatch(self, task: TaskLog, plan: list[dict], producer: AgentConfig,
+                  metrics: dict, loop, prior: list[str] | None = None) -> list[tuple]:
+        """รัน subtask ตามแผน → คืน results [(agent, subtask, output, status)] (M21 reuse จาก run + continue)
+
+        prior = สรุปงานที่ทำเสร็จไปแล้ว (ขั้น done ก่อนหน้า/รอบก่อน) ส่งเป็น context กันทำซ้ำ (M20-1).
+        task.message = เป้าหมายรวมเดิมของ CEO (caller ตั้งไว้) — ใช้เป็น goal ของ context.
+        """
         def emit(etype: str, data: dict) -> None:
             ws_manager.broadcast_threadsafe(loop, {"type": etype, "data": {"task_id": task.task_id, **data}})
 
-        from .task_router import task_router
+        from .task_router import _Rejected, task_router
         from .permission_gate import permission_gate
 
-        plan = self._decompose(task.message, producer, metrics)
-        if not plan:   # decompose ล้ม → ทำงานเดี่ยวด้วย agent ที่ match (กันค้าง)
-            agent = self._pick_agent("", task.message) or producer
-            log_service.add("task", f"orchestrate: แตกงานไม่ได้ → ทำเดี่ยวโดย {agent.name}", producer.id)
-            return task_router.run_sync(
-                TaskLog(message=task.message, agent_id=agent.id, agent_name=agent.name), agent, metrics)
-
-        log_service.add("task", f"orchestrate: {producer.name} แตกเป็น {len(plan)} งาน", producer.id)
-        emit("orchestrate.plan", {"steps": [{"role": s["role"], "subtask": s["subtask"]} for s in plan]})
-
-        from .task_router import _Rejected
+        prior = list(prior or [])
         results: list[tuple] = []
-        prior: list[str] = []   # M20-1 — สรุปงานที่ทีมทำไปแล้ว ส่งเป็น context ให้ขั้นถัดไป
+        total = len(plan)
         stopped = False   # M19-1 — มีขั้นถูก REJECT → ข้ามขั้นที่เหลือ (มักพึ่งกันตามลำดับ)
         for i, step in enumerate(plan, 1):
             agent = self._pick_agent(step["role"], step["subtask"])
@@ -249,13 +244,13 @@ class OrchestratorService:
                 continue
             if stopped:   # ขั้นก่อนหน้าถูกปฏิเสธ → ไม่ทำต่อ (กัน Tester เทสของที่ไม่มี)
                 results.append((agent, step["subtask"], "⏭️ ข้าม — ขั้นก่อนหน้าถูกปฏิเสธ", "skipped"))
-                log_service.add("task", f"  {i}/{len(plan)} ข้าม {agent.name} (ขั้นก่อนถูกปฏิเสธ)", agent.id)
+                log_service.add("task", f"  {i}/{total} ข้าม {agent.name} (ขั้นก่อนถูกปฏิเสธ)", agent.id)
                 continue
-            emit("orchestrate.subtask", {"index": i, "total": len(plan),
+            emit("orchestrate.subtask", {"index": i, "total": total,
                                          "agent_id": agent.id, "agent": agent.name, "subtask": step["subtask"]})
             # agent.status → Godot/sidebar reuse handler เดิม: sub-agent สว่าง/ทำงานทีละตัว (M15-7)
             emit("agent.status", {"agent_id": agent.id, "status": "working"})
-            log_service.add("task", f"  {i}/{len(plan)} → {agent.name}: {step['subtask'][:80]}", agent.id)
+            log_service.add("task", f"  {i}/{total} → {agent.name}: {step['subtask'][:80]}", agent.id)
             # M20-1 — แนบ context (เป้าหมายเดิม + ไฟล์ที่มี + งานคนก่อน) ให้ subtask ไม่ generic/ทำซ้ำ
             sub_msg = _subtask_context(task.message, prior) + "\n\nงานย่อยของคุณ: " + step["subtask"]
             sub = TaskLog(message=sub_msg, agent_id=agent.id, agent_name=agent.name)
@@ -291,8 +286,87 @@ class OrchestratorService:
             prior.append(f"{agent.name} ({status}): {step['subtask'][:50]} → {str(out)[:80]}")  # M20-1
             emit("agent.status", {"agent_id": agent.id, "status": "idle"})
             emit("orchestrate.subtask.done", {"index": i, "agent_id": agent.id, "status": status})
+        return results
 
+    def _save_state(self, task: TaskLog, results: list[tuple]) -> None:
+        """M21-1 — จดสถานะแต่ละขั้น (status + output) เพื่อ "▶️ ทำต่อ" รันเฉพาะที่ค้าง"""
+        from .orchestration_store import orchestration_store
+        steps = [{
+            "role": getattr(a, "role", ""), "subtask": str(sub),
+            "agent_id": getattr(a, "id", ""), "agent_name": getattr(a, "name", ""),
+            "status": st, "output": str(out),
+        } for a, sub, out, st in results]
+        orchestration_store.save(task.task_id, task.message, steps)
+
+    def _emit_result(self, task: TaskLog, results: list[tuple], loop) -> None:
+        """M21-2 — แจ้ง UI ว่ามีขั้นค้างกี่ขั้น → แสดงปุ่ม "▶️ ทำต่อ" ที่ผลงานล่าสุด"""
+        done = sum(1 for r in results if r[3] == "done")
+        ws_manager.broadcast_threadsafe(loop, {"type": "orchestrate.result", "data": {
+            "task_id": task.task_id, "done": done, "total": len(results),
+            "pending": len(results) - done}})
+
+    def _stub_agent(self, step: dict):
+        """หา agent เดิมจาก state (รอบ continue) — ถ้าถูกไล่ออกแล้วใช้ stub พอให้ synthesize/save อ้างชื่อได้"""
+        from types import SimpleNamespace
+        return registry.get(step.get("agent_id", "")) or SimpleNamespace(
+            id=step.get("agent_id", ""), name=step.get("agent_name", "?"), role=step.get("role", ""))
+
+    def run(self, task: TaskLog, producer: AgentConfig, metrics: dict, loop) -> str:
+        """แตกงาน → มอบหมาย → รวมผล (sync, เรียกจาก _execute ผ่าน to_thread)"""
+        def emit(etype: str, data: dict) -> None:
+            ws_manager.broadcast_threadsafe(loop, {"type": etype, "data": {"task_id": task.task_id, **data}})
+
+        from .task_router import task_router
+
+        plan = self._decompose(task.message, producer, metrics)
+        if not plan:   # decompose ล้ม → ทำงานเดี่ยวด้วย agent ที่ match (กันค้าง)
+            agent = self._pick_agent("", task.message) or producer
+            log_service.add("task", f"orchestrate: แตกงานไม่ได้ → ทำเดี่ยวโดย {agent.name}", producer.id)
+            return task_router.run_sync(
+                TaskLog(message=task.message, agent_id=agent.id, agent_name=agent.name), agent, metrics)
+
+        log_service.add("task", f"orchestrate: {producer.name} แตกเป็น {len(plan)} งาน", producer.id)
+        emit("orchestrate.plan", {"steps": [{"role": s["role"], "subtask": s["subtask"]} for s in plan]})
+
+        results = self._dispatch(task, plan, producer, metrics, loop)
+        self._save_state(task, results)        # M21-1
+        self._emit_result(task, results, loop)  # M21-2
         return self._synthesize(task.message, results, producer, metrics)
+
+    def continue_run(self, task: TaskLog, producer: AgentConfig, from_task_id: str,
+                     metrics: dict, loop) -> str:
+        """M21-2 — ทำงานต่อจากเดิม: รันเฉพาะขั้นที่ยังไม่ done (ข้าม done) พร้อม context ของงานที่ทำแล้ว
+
+        task.message ถูกตั้งเป็นเป้าหมายเดิม (โดย caller) — รวมผลขั้น done เดิม + ขั้นใหม่ → synthesize ภาพรวม.
+        """
+        from .orchestration_store import orchestration_store
+
+        def emit(etype: str, data: dict) -> None:
+            ws_manager.broadcast_threadsafe(loop, {"type": etype, "data": {"task_id": task.task_id, **data}})
+
+        state = orchestration_store.get(from_task_id)
+        if not state:
+            raise ValueError("ไม่พบสถานะงานเดิมให้ทำต่อ")
+        steps = state.get("steps", [])
+        done = [s for s in steps if s.get("status") == "done"]
+        pending = [s for s in steps if s.get("status") != "done"]
+        if not pending:
+            return "ทุกขั้นของงานเดิมเสร็จหมดแล้ว ไม่มีขั้นที่ต้องทำต่อ"
+
+        prior = [f'{s.get("agent_name", "?")} (done): {str(s.get("subtask", ""))[:50]} '
+                 f'→ {str(s.get("output", ""))[:80]}' for s in done]
+        plan = [{"role": s.get("role", ""), "subtask": s.get("subtask", "")} for s in pending]
+        log_service.add("task",
+            f"orchestrate: ทำต่อ {len(plan)} ขั้นที่ค้าง (ข้าม {len(done)} ขั้นที่เสร็จแล้ว)", producer.id)
+        emit("orchestrate.plan", {"steps": plan, "continued": True})
+
+        new_results = self._dispatch(task, plan, producer, metrics, loop, prior=prior)
+        # ขั้น done เดิม (จาก state) + ขั้นใหม่ → state ใหม่ + synthesize เห็นภาพรวมครบ
+        done_results = [(self._stub_agent(s), s.get("subtask", ""), s.get("output", ""), "done") for s in done]
+        all_results = done_results + new_results
+        self._save_state(task, all_results)
+        self._emit_result(task, all_results, loop)
+        return self._synthesize(state["message"], all_results, producer, metrics)
 
 
 orchestrator_service = OrchestratorService()
