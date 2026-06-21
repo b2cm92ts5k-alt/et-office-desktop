@@ -322,8 +322,9 @@ body.terminal #task-form { padding: 0 10px 10px; flex: none; }
 #mini-feed {
   font-family: var(--font-mono); font-size: 10px; line-height: 1.6;
   color: var(--sub); min-height: 48px;
+  max-height: 180px; overflow: auto;          /* สไลด์ได้ทั้งแนวตั้ง + แนวนอน (อ่านได้ครบ) */
 }
-#mini-feed .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mini-feed .ln { white-space: nowrap; }       /* ไม่ wrap → เลื่อนแนวนอนอ่านบรรทัดยาวเต็มได้ */
 #mini-feed .ln.user   { color: var(--gold); }
 #mini-feed .ln.route  { color: var(--cyan); }
 #mini-feed .ln.done   { color: var(--green); }
