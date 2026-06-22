@@ -131,6 +131,11 @@ class SocialSettings(BaseModel):
     social_local_only: Optional[bool] = None   # M24-2 — social/collab ใช้เฉพาะ local (กันเผา cloud quota)
 
 
+class StudioSettings(BaseModel):
+    """M23-1 — โดเมน/ภารกิจของออฟฟิศ (ทำให้ทีมไม่ตีทุกงานเป็นเกม)"""
+    studio_focus: Optional[str] = None
+
+
 class LogEntry(BaseModel):
     id: int = 0
     ts: str = Field(default_factory=_now)

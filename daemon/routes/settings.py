@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from ..adapters.llm_adapter import (
     ENV_KEY_MAP, available_cloud_providers, specialist_for)
-from ..models.schemas import ApiKeyRequest, SocialSettings, WorkspaceSettings
+from ..models.schemas import ApiKeyRequest, SocialSettings, StudioSettings, WorkspaceSettings
 from ..services.settings_store import settings_store
 
 router = APIRouter(tags=["settings"])
@@ -98,6 +98,12 @@ def get_social_settings() -> dict:
 @router.put("/settings/social")
 def update_social_settings(payload: SocialSettings) -> dict:
     """มีผลรอบ loop ถัดไปทันที ไม่ต้อง restart daemon"""
+    return settings_store.update(payload.model_dump(exclude_none=True))
+
+
+@router.put("/settings/studio")
+def update_studio_settings(payload: StudioSettings) -> dict:
+    """M23-1 — ตั้งโดเมน/ภารกิจของออฟฟิศ (มีผลกับงานถัดไปทันที ไม่ต้อง restart)"""
     return settings_store.update(payload.model_dump(exclude_none=True))
 
 
