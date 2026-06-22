@@ -59,7 +59,9 @@ def _workspace_files(limit: int = 40) -> list[str]:
 def _subtask_context(goal: str, prior: list[str]) -> str:
     """บริบทให้ subtask (M20-1): เป้าหมายเดิมของ CEO + ไฟล์ที่มี + งานที่ทีมทำไปแล้ว
     → กัน output generic, ทำซ้ำ, ลืมโจทย์ (เช่นสั่ง mario แต่ได้เกมทั่วไป)"""
-    parts = [f'เป้าหมายรวมที่ CEO สั่ง: "{goal}"  (งานย่อยของคุณต้องสอดคล้องกับเป้าหมายนี้)']
+    from .settings_store import settings_store
+    parts = [settings_store.studio_directive(),   # M23-1 — โดเมนออฟฟิศ (กันตีเป็นเกม)
+             f'เป้าหมายรวมที่ CEO สั่ง: "{goal}"  (งานย่อยของคุณต้องสอดคล้องกับเป้าหมายนี้)']
     files = _workspace_files()
     if files:
         parts.append("ไฟล์ในโปรเจกต์ตอนนี้ (อ่าน/ต่อยอดได้ — อย่าสร้างซ้ำของที่มีแล้ว):\n"
@@ -158,10 +160,12 @@ class OrchestratorService:
         cloud ล้ม/ว่าง (เช่น 429 free tier) → fallback แตกงานด้วย local ollama (schema บังคับ)
         เพื่อให้ "การแจกงาน" ยังเกิดแม้ cloud model ของ Producer มีปัญหา.
         """
+        from .settings_store import settings_store
         roles = ", ".join(sorted({f"{a.role}" for a in self._team()})) or "ทั่วไป"
         sys = (
             "คุณคือหัวหน้าทีม (Producer) แตกคำสั่งของ CEO เป็นงานย่อยให้ลูกทีมทำ.\n"
-            f"ลูกทีมที่มี (role): {roles}\n"
+            + settings_store.studio_directive() + "\n"   # M23-1 — กันแตกงานเป็นเกมทุกครั้ง
+            + f"ลูกทีมที่มี (role): {roles}\n"
             f"กติกา: แตกเป็นงานย่อยที่ทำได้จริงไม่เกิน {MAX_SUBTASKS} ข้อ, เรียงตามลำดับการทำ, "
             "แต่ละข้อระบุ role ลูกทีมที่เหมาะ (เลือกจากรายการข้างบน) และคำสั่งย่อยที่ชัดเจน. "
             "งานง่ายแตกแค่ 1 ข้อก็ได้.\n"

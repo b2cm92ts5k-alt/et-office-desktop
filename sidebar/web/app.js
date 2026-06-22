@@ -441,6 +441,7 @@ async function loadSettings() {
     document.getElementById("soc-local-only").checked = soc.social_local_only !== false;  // M24-2 default on
     document.getElementById("soc-chance").value = soc.social_chance;
     document.getElementById("soc-cooldown").value = Math.round(soc.proposal_cooldown_sec / 60);
+    document.getElementById("studio-focus").value = soc.studio_focus || "";   // M23-1
     const ws = await (await fetch(BASE + "/settings/workspace")).json();
     document.getElementById("ws-path").value = ws.path;
     renderWsStatus(ws);
@@ -963,6 +964,19 @@ async function saveSocial() {
   });
   feedLine(res.ok ? "done" : "error",
     res.ok ? "บันทึกค่า social loop แล้ว" : "บันทึกไม่สำเร็จ");
+}
+
+// M23-1 — บันทึก Studio Focus (โดเมน/ภารกิจออฟฟิศ) — มีผลกับงานถัดไปทันที
+async function saveStudio() {
+  const focus = document.getElementById("studio-focus").value.trim();
+  const res = await fetch(BASE + "/settings/studio", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ studio_focus: focus }),
+  });
+  feedLine(res.ok ? "done" : "error",
+    res.ok ? (focus ? `ตั้งโฟกัสออฟฟิศ → ${esc(focus)}` : "ล้างโฟกัส — รับงานทุกประเภท")
+           : "บันทึกไม่สำเร็จ");
 }
 
 /* ---------- atmosphere picker (M4-10) ---------- */

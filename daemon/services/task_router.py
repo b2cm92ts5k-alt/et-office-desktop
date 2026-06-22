@@ -450,6 +450,7 @@ class TaskRouter:
         system = _LOOP_PROMPT.format(
             system_prompt=agent_cfg.system_prompt or f"คุณคือ {agent_cfg.name} ({agent_cfg.role})",
             root=str(root), tools=tool_lines)
+        system += "\n\n" + settings_store.studio_directive()   # M23-1 — โดเมนออฟฟิศ (กันงานทุกอย่างกลายเป็นเกม)
         if strict:  # รอบ retry (M11-2) — ย้ำกติกาให้ model เล็กตามให้แม่นขึ้น
             system += ("\n\n‼️ รอบแก้ตัว: ตอบ JSON ตามรูปแบบเป๊ะ ๆ เท่านั้น | "
                        "เลือก tool จากรายการข้างบนเท่านั้น | ใส่ args ให้ครบทุกตัว | "

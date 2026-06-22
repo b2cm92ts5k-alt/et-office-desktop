@@ -27,6 +27,7 @@ DEFAULTS: dict = {
     "cost_daily_usd": 5.0,           # M11-10 — เพดานต่อวัน (USD); 0 = ไม่จำกัด
     "cost_hourly_usd": 0.0,          # M11-10 — เพดานต่อชั่วโมง (USD); 0 = ไม่จำกัด
     "disabled_skills": [],           # M15-3 — ชื่อ skill ที่ปิด (ไม่ inject); ว่าง = เปิดทุกตัว
+    "studio_focus": "",              # M23-1 — โดเมน/ภารกิจของออฟฟิศ (เช่น "ทำเว็บ/คอนเทนต์") inject เข้า decompose+subtask+tool-loop; ว่าง = ทั่วไป (ไม่ผูกเกม)
 }
 
 
@@ -46,6 +47,16 @@ class SettingsStore:
 
     def get(self, key: str):
         return self._values.get(key, DEFAULTS.get(key))
+
+    def studio_directive(self) -> str:
+        """M23-1 — คำสั่งบริบทโดเมนของออฟฟิศ inject เข้า decompose/subtask/tool-loop
+        กันทีม 'ตีทุกงานเป็นเกม' (persona เดิมเป็นสตูดิโอเกม). ว่าง = ทั่วไป"""
+        focus = (self.get("studio_focus") or "").strip()
+        base = ("ทำงานตามโจทย์ที่ผู้ใช้สั่งตรง ๆ ได้ทุกประเภท (เว็บ/เอกสาร/คอนเทนต์/โค้ด/วิจัย/ออกแบบ/เกม ฯลฯ) "
+                "— อย่าตีกรอบว่าเป็นงานเกมหรือสตูดิโอเกมถ้าโจทย์ไม่ได้ระบุ")
+        if focus:
+            return f"บริบทออฟฟิศ: ทีมนี้โฟกัสงานด้าน «{focus}» เป็นหลัก. {base}."
+        return base + "."
 
     def update(self, changes: dict) -> dict:
         """รับเฉพาะ key ที่รู้จัก — กัน typo เขียนค่าขยะลงไฟล์"""
