@@ -14,6 +14,7 @@ let agents = {};
 let ws = null;
 let attached = [];   // ไฟล์ที่ลากใส่ รอแนบ task ถัดไป (M9-2)
 let chatMode = false;   // M13-7 — false = สั่งงาน (task), true = คุยเล่น (chat)
+let teamMode = true;    // M23-3 — true = ทีม (Sub-Agent แตกงาน), false = เดี่ยว (1 agent ทำเอง)
 
 /* ---------- drag & drop ไฟล์ (M9-2) ---------- */
 
@@ -122,6 +123,13 @@ function renderAgentPicker() {
   if (cur && agents[cur]) sel.value = cur;   // คงตัวที่เลือกไว้
 }
 
+function toggleTeam() {
+  teamMode = !teamMode;
+  const btn = document.getElementById("team-btn");
+  btn.textContent = teamMode ? "👥 ทีม" : "👤 เดี่ยว";
+  btn.classList.toggle("solo", !teamMode);
+}
+
 function toggleMode() {
   chatMode = !chatMode;
   const btn = document.getElementById("mode-btn");
@@ -182,13 +190,13 @@ async function submitTask() {
     const res = await fetch(BASE + "/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: sent, agent_id: targetId }),
+      body: JSON.stringify({ message: sent, agent_id: targetId, single: !teamMode }),  // M23-3
     });
     const data = await res.json();
     // ใช้ model จริงจาก response (authoritative) ไม่ใช่ cache เก่าของหน้าต่างนี้ (fix 2026-06-21)
     const cfg = Object.values(agents).find(a => a.name === data.agent);
     const model = data.model || (cfg ? cfg.llm.model : "?");
-    const orch = data.orchestrate ? " · แตกงาน" : "";
+    const orch = data.orchestrate ? " · แตกงาน" : (targetId ? "" : " · เดี่ยว");
     feedLine("route", `→ มอบงานให้ <b>${esc(data.agent)}</b> (${esc(model)})${orch}`);
   } catch {
     feedLine("error", "ส่ง task ไม่ได้ — daemon เปิดอยู่ไหม?");

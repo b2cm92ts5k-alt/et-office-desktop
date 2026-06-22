@@ -221,13 +221,16 @@ def _friendly_error(exc) -> str:
 
 
 class TaskRouter:
-    async def route_and_execute(self, message: str, agent_id: str | None = None) -> TaskLog:
+    async def route_and_execute(self, message: str, agent_id: str | None = None,
+                                single: bool = False) -> TaskLog:
         """สร้าง task แล้วรันเบื้องหลัง — return ทันทีพร้อม task_id
 
         agent_id: ระบุ agent เป้าหมายตรง ๆ (terminal เลือกผู้รับ, M13-7) — ถ้าเป็น CEO
         หรือไม่พบ ตกกลับ keyword match (CEO ไม่ทำงานเอง, M13-8).
+        single (M23-3): โหมดเดี่ยว — เลือก agent ที่เหมาะ 1 ตัวทำเองทั้งงาน ไม่แตกเป็นทีม
+        (เหมาะงานเล็ก เช่นขอเอกสาร 1 ไฟล์). ไม่ใส่ = โหมดทีม (Sub-Agent orchestrate).
         """
-        # M15-5: เลือกผู้รับตรง (terminal) → ทำเดี่ยว; คำสั่งทั่วไป → orchestrate (Sub-Agent เสมอ)
+        # M15-5/M23-3: เลือกผู้รับตรง หรือ single → ทำเดี่ยว; ไม่งั้น → orchestrate (Sub-Agent)
         agent_cfg = None
         orchestrate = False
         if agent_id:
@@ -235,8 +238,11 @@ class TaskRouter:
             if target and not target.is_ceo:
                 agent_cfg = target
         if agent_cfg is None:
-            agent_cfg = self._default_agent(self._workers())  # Producer = orchestrator lead
-            orchestrate = True
+            if single:   # M23-3 — โหมดเดี่ยว: keyword match 1 ตัว ทำเองไม่แตกงาน
+                agent_cfg = self._match_agent(message)
+            else:
+                agent_cfg = self._default_agent(self._workers())  # Producer = orchestrator lead
+                orchestrate = True
         task = TaskLog(message=message, agent_id=agent_cfg.id, agent_name=agent_cfg.name)
         log_service.save_task(task)
         verb = "orchestrate" if orchestrate else "routing"

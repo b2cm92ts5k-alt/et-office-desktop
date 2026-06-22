@@ -45,6 +45,15 @@ CATALOG: list[dict] = [
      "size_gb": 20.0, "min_vram_gb": 24, "recommended": True,
      "desc": "Coder ระดับสูงสุด สำหรับเครื่องสเปคแรง"},
 
+    # --- Qwen3 Coder (M23-2) — รุ่นใหม่ ตัวใหญ่เท่านั้น (Ollama เล็กสุด 30B) สำหรับเครื่องสเปคแรง
+    # ไม่ใช้เป็น base default (เครื่องทั่วไปรันไม่ได้) — ใส่ให้ "เลือกติดตั้งได้" ถ้า VRAM พอ
+    {"tag": "qwen3-coder:30b", "name": "Qwen3 Coder 30B (A3B)", "family": "qwen3-coder", "category": "coder",
+     "size_gb": 19.0, "min_vram_gb": 24, "recommended": True,
+     "desc": "Qwen3 Coder รุ่นใหม่ (MoE 30B/active 3B) — agentic coding เก่ง ต้องการ ~24GB VRAM"},
+    {"tag": "qwen3-coder:480b", "name": "Qwen3 Coder 480B (A35B)", "family": "qwen3-coder", "category": "coder",
+     "size_gb": 300.0, "min_vram_gb": 360, "recommended": False,
+     "desc": "รุ่นเรือธง (MoE 480B) — ระดับ data-center/หลาย GPU เท่านั้น"},
+
     # --- Qwen2.5 Math ---
     {"tag": "qwen2.5-math:1.5b", "name": "Qwen2.5 Math 1.5B", "family": "qwen2.5-math", "category": "math",
      "size_gb": 1.2, "min_vram_gb": 3, "recommended": False,
