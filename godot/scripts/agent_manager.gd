@@ -376,6 +376,25 @@ func _apply_status(agent_id: String, status: String, from_daemon: bool = true) -
 			_release_spot(agent_id)         # ปล่อยที่ cafe/meeting ถ้าเคยจอง
 			sprite.set_bunk(int(bunk["bunk"]))  # ชั้นบน → ยกภาพ + z สูงกว่า (ข้อ 3)
 			_walk_to(sprite, bunk["cell"])
+	_update_busy()   # M22-4 — สถานะเปลี่ยน → อัปเดตความคึกคักของออฟฟิศ
+
+
+func _update_busy() -> void:
+	# M22-4 ambient office life — นับสัดส่วน agent ที่กำลังทำงาน → ป้ายนีออน/ออฟฟิศคึกคักตาม
+	if _agents.is_empty():
+		return
+	var working := 0
+	var total := 0
+	for id: String in _agents:
+		if _ceo_ids.has(id):
+			continue
+		total += 1
+		var st: String = _agents[id].status
+		if st == "working" or st == "thinking" or st == "collab":
+			working += 1
+	var level := float(working) / float(maxi(total, 1))
+	for sign in get_tree().get_nodes_in_group("neon_sign"):
+		sign.set_busy(level)
 
 
 func _walk_to(sprite: AgentSprite, dest: Vector2i) -> void:

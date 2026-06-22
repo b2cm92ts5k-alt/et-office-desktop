@@ -15,13 +15,22 @@ const GLOW_NOISE := 0.18                # ช่วงสั่นของ glow
 const BLINK_CHANCE := 0.003             # โอกาสดับวูบต่อเฟรม (30fps ≈ ทุก ~11 วิ)
 const BLINK_SEC := 0.12
 
+const BUSY_BOOST := 0.30        # M22-4 — glow สว่างขึ้นเมื่อทีมยุ่ง (office คึกคัก)
+
 var _base: Sprite2D
 var _glow: Sprite2D
 var _blink_until := 0.0
 var _t := 0.0
+var _busy := 0.0                # M22-4 — ระดับความยุ่งของทีม 0..1 (agent_manager อัปเดต)
+
+
+func set_busy(level: float) -> void:
+	# M22-4 — ambient office life: ทีมยุ่ง = ป้ายนีออนสว่าง+สั่นถี่ขึ้น (ออฟฟิศดูคึกคัก)
+	_busy = clampf(level, 0.0, 1.0)
 
 
 func _ready() -> void:
+	add_to_group("neon_sign")   # M22-4 — ให้ agent_manager หา (ไม่ผูก path ตรง)
 	# node.position = ground line ของผนัง W ที่ cell นี้ → y-sort วาดป้ายในเลเยอร์เดียว
 	# กับผนัง (อยู่หน้าผนังช่วงบน) ส่วนตัวป้ายยกขึ้นเหนือกำแพงด้วย offset ของ sprite
 	y_sort_enabled = true
@@ -55,7 +64,8 @@ func _process(delta: float) -> void:
 		_base.modulate.a = 0.45
 		return
 	_base.modulate.a = 1.0
-	# สั่นแบบสุ่มนุ่ม ๆ — ผสมคลื่นสองความถี่กัน beat ตายตัว
-	_glow.modulate.a = GLOW_BASE \
-		+ sin(_t * 7.3) * GLOW_NOISE * 0.5 \
+	# สั่นแบบสุ่มนุ่ม ๆ — ผสมคลื่นสองความถี่กัน beat ตายตัว · ยุ่ง = สว่าง+ถี่ขึ้น (M22-4)
+	var fast := 7.3 + _busy * 4.0
+	_glow.modulate.a = GLOW_BASE + _busy * BUSY_BOOST \
+		+ sin(_t * fast) * GLOW_NOISE * 0.5 \
 		+ sin(_t * 1.7) * GLOW_NOISE * 0.5

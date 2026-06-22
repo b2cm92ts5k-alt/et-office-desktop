@@ -43,6 +43,7 @@ class AgentConfig(BaseModel):
     keywords: list[str] = []
     system_prompt: str = ""
     backstory: str = ""
+    personality: str = ""           # M22-3 — บุคลิกตอนคุยเล่น (ว่าง = preset ตาม role)
     sprite: str = ""                # custom spritesheet ใน data/sprites/ (M6-2 v2)
     is_ceo: bool = False            # ตัวละคร CEO/ผู้ใช้ จาก onboarding (M8) — ไล่ออกไม่ได้
     llm: LLMConfig = LLMConfig()
@@ -61,6 +62,7 @@ class AgentCreate(BaseModel):
     keywords: list[str] = []
     system_prompt: str = ""
     backstory: str = ""
+    personality: str = ""           # M22-3
     sprite: str = ""
     is_ceo: bool = False
     llm: LLMConfig = LLMConfig()
@@ -77,6 +79,7 @@ class AgentUpdate(BaseModel):
     keywords: Optional[list[str]] = None
     system_prompt: Optional[str] = None
     backstory: Optional[str] = None
+    personality: Optional[str] = None           # M22-3
     sprite: Optional[str] = None
     llm: Optional[LLMConfig] = None
     image_model: Optional[LLMConfig] = None     # M17 — โมเดล generate_image
