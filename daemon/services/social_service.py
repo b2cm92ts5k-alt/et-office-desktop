@@ -54,6 +54,10 @@ class SocialService:
         if since is not None and since < cooldown:
             return
         idle = [a for a in registry.all() if a.status == "idle"]
+        # M24-2 — กันเผา quota: social/collab คุยเล่นเป็น cloud call จริง (get_llm(agent.llm))
+        # → default ใช้เฉพาะ agent local (ollama=ฟรี); cloud agent ยังทำงาน task ปกติ แค่ไม่คุยเล่นทิ้ง request
+        if settings_store.get("social_local_only"):
+            idle = [a for a in idle if a.llm.provider == "ollama"]
         if len(idle) < 2 or random.random() >= float(settings_store.get("social_chance")):
             return
         pair = random.sample(idle, 2)

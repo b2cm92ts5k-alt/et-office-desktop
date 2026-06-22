@@ -152,6 +152,9 @@
         <label class="inline"><input type="checkbox" id="soc-enabled"> เปิด agent คุยกันเอง</label>
       </div>
       <div class="set-row">
+        <label class="inline"><input type="checkbox" id="soc-local-only"> คุยเล่นใช้เฉพาะ local (กันเผา quota cloud)</label>
+      </div>
+      <div class="set-row">
         <label class="inline">โอกาสคุย <input id="soc-chance" type="number" min="0" max="1" step="0.05" class="num"></label>
         <label class="inline">cooldown ข้อเสนอ (นาที) <input id="soc-cooldown" type="number" min="0" step="5" class="num"></label>
         <button class="neon-btn" onclick="saveSocial()">SAVE</button>
@@ -271,6 +274,7 @@
 <div id="model-backdrop" class="hidden" onclick="closeModelPicker(event)">
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
+    <input id="m-model-filter" type="text" placeholder="🔍 ค้นหา model… (พิมพ์ชื่อ/provider)" oninput="filterGearModels()" autocomplete="off">
     <label>Model AI <select id="m-model"></select></label>
     <div id="m-model-more"></div>
     <label id="m-key-row" class="hidden">Key / บัญชี <select id="m-key"></select></label>

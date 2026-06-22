@@ -251,8 +251,10 @@ def _parse_openrouter(data: dict) -> list[dict]:
             continue
         outmods = (m.get("architecture") or {}).get("output_modalities") or []
         if outmods:
-            kind = (KIND_CHAT if "text" in outmods else KIND_IMAGE if "image" in outmods
-                    else KIND_AUDIO if "audio" in outmods else KIND_VIDEO if "video" in outmods
+            # M24-4 — เช็ค image/audio/video ก่อน text: image-output model มัก list ["text","image"]
+            # (มันตอบ text ได้ด้วย) — ถ้าเช็ค text ก่อนจะถูกจัดเป็น chat ทำให้ image model หายจาก ?kind=image
+            kind = (KIND_IMAGE if "image" in outmods else KIND_AUDIO if "audio" in outmods
+                    else KIND_VIDEO if "video" in outmods else KIND_CHAT if "text" in outmods
                     else KIND_OTHER)
         else:
             kind = _kind_from_id(mid)
