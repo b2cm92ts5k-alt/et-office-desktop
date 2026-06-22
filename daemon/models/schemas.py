@@ -128,6 +128,7 @@ class SocialSettings(BaseModel):
     social_interval_sec: Optional[float] = Field(default=None, ge=5)
     social_chance: Optional[float] = Field(default=None, ge=0, le=1)
     proposal_cooldown_sec: Optional[float] = Field(default=None, ge=0)
+    social_local_only: Optional[bool] = None   # M24-2 — social/collab ใช้เฉพาะ local (กันเผา cloud quota)
 
 
 class LogEntry(BaseModel):

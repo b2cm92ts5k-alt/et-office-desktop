@@ -13,6 +13,7 @@ DEFAULTS: dict = {
     "social_enabled": True,
     "social_interval_sec": 300,      # เช็คทุก 5 นาที (blueprint)
     "social_chance": 0.3,            # 30% ต่อรอบ
+    "social_local_only": True,       # M24-2 — คุยเล่น/collab ใช้เฉพาะ agent local (ข้าม cloud) กันเผา request/token cloud; ปิด = ให้ cloud คุยเล่นด้วย
     "proposal_cooldown_sec": 1800,   # ห่างขั้นต่ำระหว่าง proposal 30 นาที
     "workspace_path": "",            # โฟลเดอร์ workspace ทีม (M6-6) — "" = ปิด tool use
     "installed_models": [],          # local model ที่ลงผ่าน Model Manager (M7-3) — cap 1 ตัว

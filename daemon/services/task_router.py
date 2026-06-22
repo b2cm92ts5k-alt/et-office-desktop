@@ -188,14 +188,35 @@ def _extract_json(text: str) -> dict | None:
 
 
 def _friendly_error(exc) -> str:
-    """แปลง error ดิบ (เช่น 429 JSON ยาว) เป็นข้อความที่ CEO อ่านรู้เรื่อง + ทางแก้ (fix 2026-06-21)"""
+    """แปลง error ดิบเป็นข้อความที่ CEO อ่านรู้เรื่อง + ทางแก้ตรงสาเหตุ (M24-1)
+
+    แยกชัดเจน กันเข้าใจผิดว่า "key พัง" ทุกครั้งที่ cloud ล้ม:
+      401/403 = key ผิด/auth ไม่ผ่าน (key พังจริง) · 404 = model id ไม่มี/ไม่รองรับ ·
+      429/quota/rate-limit = ชนลิมิตชั่วคราว (key ยังดี! free model ตันคนละเรื่องกับ key)
+    """
     s = str(exc)
     low = s.lower()
-    if "429" in s or "resource_exhausted" in low or "quota" in low:
-        return ("⚠️ โควต้า model หมด (free tier จำกัดต่อวัน/นาที — โดยเฉพาะ gemini-2.5-pro) — "
-                "สลับเป็น gemini-2.5-flash หรือ model อื่นที่ ⚙️ Gear ของ agent หรือรอโควต้ารีเซ็ต")
-    if "api key" in low or "missing" in low and "key" in low:
+    # ยังไม่ได้ตั้ง key เลย (MissingAPIKeyError)
+    if ("missing" in low and "key" in low) or "ยังไม่ได้ตั้ง api key" in low:
         return "ยังไม่ได้ตั้ง API key ของ provider นี้ — เพิ่มที่ Settings → API Keys"
+    # auth ไม่ผ่าน = key ผิด/หมดอายุจริง (แยกออกจาก 429 ให้ชัด)
+    if any(x in s for x in ("401", "403")) or any(x in low for x in (
+            "invalid api key", "incorrect api key", "invalid_api_key", "unauthorized",
+            "authentication", "permission_denied", "api key not valid")):
+        return ("🔑 API key ใช้ไม่ได้ (auth ไม่ผ่าน) — ตรวจ/ใส่ key ใหม่ที่ Settings → API Keys "
+                "(เช็คว่า copy ครบ ไม่มีช่องว่าง และ provider ตรงกับ key)")
+    # model id ไม่มี/ไม่รองรับกับ key นี้
+    if "404" in s or "not found" in low or "does not exist" in low or "no such model" in low:
+        return ("🔍 ไม่พบ model นี้ที่ provider (id ผิด/ถูกถอด/ไม่รองรับ key นี้) — "
+                "เลือก model อื่นที่ ⚙️ Gear ของ agent")
+    # rate limit / quota — key ยังดี แค่คิวเต็ม/โควต้าจำกัดชั่วคราว
+    if any(x in s for x in ("429",)) or any(x in low for x in (
+            "rate limit", "rate-limited", "resource_exhausted", "quota", "too many requests")):
+        if "rate-limited upstream" in low or "add your own key" in low or ":free" in low:
+            return ("⏳ free model คิวเต็ม (provider rate-limit) — key ของคุณยังใช้ได้ปกติ · "
+                    "ลองสลับ free model ตัวอื่น, รอสักครู่, หรือเติมเครดิต/ใช้ paid model เพื่อ limit สูงขึ้น (⚙️ Gear)")
+        return ("⏳ ชนลิมิต/โควต้าของ model ชั่วคราว (key ยังใช้ได้) — รอสักครู่ "
+                "หรือสลับเป็น model/provider อื่นที่ ⚙️ Gear ของ agent")
     return s[:300]
 
 

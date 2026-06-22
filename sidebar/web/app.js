@@ -438,6 +438,7 @@ async function loadSettings() {
     renderGithubStatus(await (await fetch(BASE + "/settings/github")).json());
     const soc = await (await fetch(BASE + "/settings/social")).json();
     document.getElementById("soc-enabled").checked = !!soc.social_enabled;
+    document.getElementById("soc-local-only").checked = soc.social_local_only !== false;  // M24-2 default on
     document.getElementById("soc-chance").value = soc.social_chance;
     document.getElementById("soc-cooldown").value = Math.round(soc.proposal_cooldown_sec / 60);
     const ws = await (await fetch(BASE + "/settings/workspace")).json();
@@ -951,6 +952,7 @@ async function saveGithub() {
 async function saveSocial() {
   const payload = {
     social_enabled: document.getElementById("soc-enabled").checked,
+    social_local_only: document.getElementById("soc-local-only").checked,   // M24-2
     social_chance: parseFloat(document.getElementById("soc-chance").value) || 0,
     proposal_cooldown_sec: (parseFloat(document.getElementById("soc-cooldown").value) || 0) * 60,
   };
