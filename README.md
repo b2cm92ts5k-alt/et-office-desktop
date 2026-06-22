@@ -7,7 +7,7 @@
 > ไม่ส่งข้อมูลออก) · cloud (Claude/Gemini/GPT/Grok/DeepSeek/OpenRouter/GitHub Models) เป็น **ของเสริม opt-in**
 > เฉพาะ agent ที่อยากได้คุณภาพ/ความเร็วสูงขึ้น
 
-**เวอร์ชันปัจจุบัน: `v0.20.0`** — M20 (Orchestration Quality)
+**เวอร์ชันปัจจุบัน: `v0.21.0`** — M21 ทำงานต่อ · M22 agent มีชีวิต/คุยเป็นกลุ่ม · M23 multi-domain · M24 cloud reliability
 
 AI Agent ทีมงานเดินทำงาน ประชุม คุยกันเอง อยู่หลัง desktop icon ของคุณ — **สั่งงานได้จริง**:
 สั่งหนึ่งคำสั่ง → **Producer แตกงานเป็นขั้น แล้วกระจายให้ specialist ทำต่อกัน** → สร้าง/แก้ไฟล์,

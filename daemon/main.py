@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ET Office Daemon",
     description="Backend daemon — agent registry, task router (CrewAI), WebSocket hub",
-    version="0.20.0",
+    version="0.21.0",
     lifespan=lifespan,
 )
 

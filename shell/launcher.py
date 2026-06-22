@@ -45,7 +45,7 @@ GODOT_GLOB = "Godot_v*-stable_win64.exe"
 WM_CLOSE = 0x0010
 GODOT_CLOSE_GRACE_SEC = 12   # รอ detach + คืน wallpaper ก่อนยอม force
 RUNFILE = REPO / "daemon" / "data" / "launcher_run.json"   # M12-3: pid ของ session ปัจจุบัน
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.21.0"
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 user32 = ctypes.windll.user32
