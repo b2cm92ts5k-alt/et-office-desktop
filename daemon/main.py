@@ -5,8 +5,17 @@ docs: http://localhost:8797/docs
 """
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# M24-5 — บังคับ console เป็น utf-8 (Windows default cp1252 ทำ crewai event-logger crash เวลา
+# error มี emoji เช่น ❌ → "'charmap' codec can't encode '❌'"). ตั้งก่อน import crewai/logging
+for _stream in ("stdout", "stderr"):
+    try:
+        getattr(sys, _stream).reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 — บาง environment (frozen/pipe) ไม่มี reconfigure
+        pass
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect

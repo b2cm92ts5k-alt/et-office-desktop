@@ -1003,26 +1003,33 @@ async function loadAvailableModels(force, all) {
   }
 }
 
-// M21 (CEO): โชว์ชื่อ model อย่างเดียว — เหลือ header กลุ่มแบบ plain (ไม่มีสัญลักษณ์/ป้ายราคา)
-// curated เรียงขึ้นก่อนในกลุ่ม Cloud (ไม่มีดาวให้เห็น) · non-chat แยกกลุ่ม disabled
-const _MODEL_GROUPS = [
-  { label: "Local", match: o => o.provider === "ollama" },
-  { label: "Cloud", match: o => o.provider !== "ollama" && o.selectable !== false },
-  { label: "เฉพาะทาง (เลือกไม่ได้)", match: o => o.selectable === false },
-];
+// M24-3 — แยกกลุ่มตาม provider/key + เรียง A-Z ในกลุ่ม (เดิม cloud รวมก้อนเดียวหายาก)
+const PROVIDER_LABELS = {
+  claude: "Claude", gemini: "Google Gemini", openai: "OpenAI", grok: "Grok (xAI)",
+  deepseek: "DeepSeek", openrouter: "OpenRouter", github: "GitHub Models",
+};
 
 function fillModelSelect(sel, opts, current) {
   sel.innerHTML = "";
   let matched = false;
-  const used = new Set();
-  for (const g of _MODEL_GROUPS) {
-    const items = opts.filter(o => !used.has(o) && g.match(o));
-    if (!items.length) continue;
-    items.sort((a, b) => (b.curated ? 1 : 0) - (a.curated ? 1 : 0));   // ⭐ แนะนำ ลอยบนสุดในกลุ่ม
+  // Local ก่อน แล้วแต่ละ cloud provider แยกกลุ่ม (เรียง provider ตามชื่อ A-Z)
+  const groups = [];
+  const local = opts.filter(o => o.provider === "ollama");
+  if (local.length) groups.push(["Local", local]);
+  const byProv = {};
+  for (const o of opts) if (o.provider !== "ollama") (byProv[o.provider] ||= []).push(o);
+  for (const p of Object.keys(byProv).sort((a, b) =>
+      (PROVIDER_LABELS[a] || a).localeCompare(PROVIDER_LABELS[b] || b)))
+    groups.push(["Cloud · " + (PROVIDER_LABELS[p] || p), byProv[p]]);
+  for (const [glabel, items] of groups) {
+    // ในกลุ่ม: chat ก่อน specialized, ⭐ แนะนำ ลอยบน, ที่เหลือ A-Z ตามชื่อ
+    items.sort((a, b) =>
+      ((a.selectable === false) - (b.selectable === false)) ||
+      ((b.curated ? 1 : 0) - (a.curated ? 1 : 0)) ||
+      String(a.label).localeCompare(String(b.label)));
     const og = document.createElement("optgroup");
-    og.label = g.label;
+    og.label = glabel;
     for (const o of items) {
-      used.add(o);
       const op = document.createElement("option");
       op.value = o.provider + "|" + o.model;   // key/บัญชีเลือกแยกที่ m-key
       op.textContent = o.label;
@@ -1042,6 +1049,18 @@ function fillModelSelect(sel, opts, current) {
   }
 }
 
+// M24-3 — ช่องค้นหา model ใน Gear (กรองจาก ~340 ตัว) — re-render select จาก opts ที่กรอง
+let _gearOpts = [];
+function filterGearModels() {
+  const q = (document.getElementById("m-model-filter").value || "").trim().toLowerCase();
+  const cur = parseModelVal(document.getElementById("m-model").value || "");
+  const opts = q
+    ? _gearOpts.filter(o => (o.label + " " + o.model + " " + o.provider).toLowerCase().includes(q))
+    : _gearOpts;
+  fillModelSelect(document.getElementById("m-model"), opts, cur);
+  document.getElementById("m-model").onchange = () => refreshKeyDropdown();
+}
+
 // M16-7 — ลิงก์ "แสดงทั้งหมด" ใต้ select (เฉพาะ Gear ของ agent)
 let modelPickerAll = false;
 function renderModelMore() {
@@ -1055,9 +1074,10 @@ async function toggleAllModels(e) {
   if (e) e.preventDefault();
   modelPickerAll = !modelPickerAll;
   const a = agents[pickerAgentId];
-  const opts = await loadAvailableModels(true, modelPickerAll);
+  _gearOpts = await loadAvailableModels(true, modelPickerAll);   // M24-3
+  document.getElementById("m-model-filter").value = "";
   const sel = document.getElementById("m-model");
-  fillModelSelect(sel, opts, a ? a.llm : null);
+  fillModelSelect(sel, _gearOpts, a ? a.llm : null);
   sel.onchange = () => refreshKeyDropdown();
   renderModelMore();
   refreshKeyDropdown(a);
@@ -1125,7 +1145,9 @@ async function openModelPicker(agentId) {
   pickerAgentId = agentId;
   modelPickerAll = false;   // M16-7 — เริ่มที่ chat-only เสมอ (กระชับ)
   document.getElementById("m-agent-name").textContent = a.name;
-  fillModelSelect(document.getElementById("m-model"), await loadAvailableModels(true), a.llm);
+  _gearOpts = await loadAvailableModels(true);          // M24-3 — เก็บไว้ filter
+  document.getElementById("m-model-filter").value = "";
+  fillModelSelect(document.getElementById("m-model"), _gearOpts, a.llm);
   renderModelMore();         // M16-7 — ลิงก์ "แสดงทั้งหมด"
   loadSpecialistBanner(a);   // M11-9 — โชว์ banner แนะนำ cloud เมื่อมี key
   document.getElementById("m-thinking").checked = !!a.thinking_mode;   // M11-8

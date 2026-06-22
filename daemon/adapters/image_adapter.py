@@ -89,16 +89,38 @@ def _openai(model: str, key: str, prompt: str, n: int, aspect: str) -> list[byte
 
 
 def _openrouter(model: str, key: str, prompt: str, n: int, aspect: str) -> list[bytes]:
-    raise ImageError("OpenRouter image ยังไม่รองรับใน v1 (จะเพิ่มใน v2)")
+    """OpenRouter image-output models (M24-4) — /chat/completions + modalities:[image,text]
+
+    image model ของ OpenRouter (เช่น google/gemini-2.5-flash-image-preview) คืนรูปใน
+    choices[].message.images[].image_url.url เป็น data URL base64 — 1 รูป/call → loop ตาม n
+    """
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "X-Title": "ET Office"}
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "modalities": ["image", "text"]}
+    out: list[bytes] = []
+    for _ in range(n):
+        data = _post_json(url, headers, body)
+        got = False
+        for ch in data.get("choices", []) or []:
+            for img in (ch.get("message", {}) or {}).get("images", []) or []:
+                u = (img.get("image_url") or {}).get("url") or ""
+                if u.startswith("data:") and "," in u:
+                    out.append(_b64(u.split(",", 1)[1]))
+                    got = True
+        if not got:
+            raise ImageError("OpenRouter ไม่คืนรูป (model นี้อาจไม่ใช่ image-output หรือ key ไม่มีสิทธิ์)")
+    return out
 
 
 _BACKENDS = {"gemini": _gemini, "openai": _openai, "openrouter": _openrouter}
 
-# provider ที่สร้างภาพได้ใน v1 (UI/picker ใช้กรอง) — openrouter เป็น stub ไว้ก่อน
-IMAGE_PROVIDERS = {"gemini", "openai"}
+# provider ที่สร้างภาพได้ (UI/picker ใช้กรอง)
+IMAGE_PROVIDERS = {"gemini", "openai", "openrouter"}
 
 # default model ต่อ provider เมื่อ agent ไม่ได้เลือก (gemini = ฟรี Nano Banana ตามมติ CEO)
-DEFAULT_IMAGE_MODEL = {"gemini": "gemini-2.5-flash-image", "openai": "gpt-image-1"}
+DEFAULT_IMAGE_MODEL = {"gemini": "gemini-2.5-flash-image", "openai": "gpt-image-1",
+                       "openrouter": "google/gemini-2.5-flash-image-preview"}
 
 
 def supported(provider: str) -> bool:

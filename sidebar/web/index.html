@@ -274,6 +274,7 @@
 <div id="model-backdrop" class="hidden" onclick="closeModelPicker(event)">
   <div id="model-modal">
     <h2>MODEL — <span id="m-agent-name"></span></h2>
+    <input id="m-model-filter" type="text" placeholder="🔍 ค้นหา model… (พิมพ์ชื่อ/provider)" oninput="filterGearModels()" autocomplete="off">
     <label>Model AI <select id="m-model"></select></label>
     <div id="m-model-more"></div>
     <label id="m-key-row" class="hidden">Key / บัญชี <select id="m-key"></select></label>
